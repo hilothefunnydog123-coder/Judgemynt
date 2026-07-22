@@ -34,37 +34,42 @@ interface CatalogTask {
   budget: { tokens: number; seconds: number }
 }
 
-/* The rotating proof in the hero. Each is a real trap from a real task in the
-   catalog — showing the specific thing an undirected AI gets wrong persuades
-   faster than any adjective we could write about it. */
+/* The rotating proof in the hero.
+ *
+ * These are DEMONSTRATIONS, deliberately not drawn from the live catalog.
+ * An earlier draft used the real traps, which meant the marketing page
+ * published the answers to four of the six tasks — anyone who scrolled before
+ * starting would pass for the wrong reason. Illustrate the shape of the thing;
+ * never spoil a task someone is about to take. If you add a scenario here,
+ * check it does not exist in lib/tasks.ts first. */
 const PROOFS = [
   {
-    role: 'Customer Support',
+    role: 'Account Management',
     color: TEAL,
-    ask: 'Customer wants a refund 45 days in. Policy says 30.',
-    naive: 'Politely declines. Cites the 30-day window. Offers a discount code.',
-    real: 'Cross-checks the incident log — their region had a 6-hour outage in week one. An exception applies. Refund issued.',
+    ask: 'Client wants out of their contract early.',
+    naive: 'Quotes the termination clause. Confirms they can leave at the end of the term.',
+    real: 'Finds the auto-renewal notice window in the signed order form — it closed nine days ago.',
   },
   {
-    role: 'Engineering Management',
+    role: 'Operations',
     color: '#fbbf24',
-    ask: 'Five bugs, one sprint. Which two ship?',
-    naive: 'Ships the one with six angry emails and a CC to the CEO.',
-    real: 'Notices the quiet ticket is a $310k account three days from an SLA breach that voids the renewal.',
+    ask: 'Approve or reject a $420 expense claim.',
+    naive: 'Rejects it. The nightly cap in the handbook is $180.',
+    real: 'Checks the travel annexe — the cap is suspended for the three cities on the conference list.',
   },
   {
-    role: 'Data & Analytics',
+    role: 'Recruiting',
     color: '#34d399',
-    ask: 'Churn number for Thursday’s board deck.',
-    naive: 'Divides cancellations by accounts. Reports 1.0%. Flat, reassuring, wrong.',
-    real: 'Catches that annual plans stay "active" for months after the customer quits. The real number is somewhere else.',
+    ask: 'Write the rejection email for a final-round candidate.',
+    naive: 'Sends the warm standard template within the hour.',
+    real: 'Notices they were sourced through a referral with a 30-day feedback obligation attached.',
   },
   {
-    role: 'Marketing',
+    role: 'IT & Security',
     color: '#a78bfa',
-    ask: 'Hero copy for a sleep supplement.',
-    naive: '"Clinically proven to beat insomnia." Two regulatory violations in six words.',
-    real: 'Sells on dosage and third-party testing. Passes legal unchanged.',
+    ask: 'A vendor asks for admin access to close a ticket.',
+    naive: 'Grants read-write for 24 hours. Reasonable, helpful, logged.',
+    real: 'Reads the DPA — this vendor is not cleared for systems holding customer records.',
   },
 ]
 

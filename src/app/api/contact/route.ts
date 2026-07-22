@@ -1,10 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
 const FROM = process.env.EMAIL_FROM ?? 'Judgemynt <onboarding@resend.dev>'
 const TO = process.env.CONTACT_EMAIL ?? 'judgemynt@gmail.com'
 const OK = !!(process.env.RESEND_API_KEY && !process.env.RESEND_API_KEY.includes('your_'))
+
+/** Built on demand, never at module load.
+ *
+ * `new Resend(undefined)` throws, and at module scope that throw happens while
+ * Next collects page data at BUILD time — so an unconfigured deployment could
+ * not compile at all, let alone degrade gracefully. Construct it only once we
+ * know there is a key and we are actually about to send. */
+function client(): Resend {
+  return new Resend(process.env.RESEND_API_KEY)
+}
 
 function esc(s: unknown): string {
   return String(s ?? '').replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' })[c] as string)
@@ -15,7 +24,7 @@ export async function POST(req: NextRequest) {
   if (!email || !message) return NextResponse.json({ error: 'Email and message are required.' }, { status: 400 })
   if (!OK) return NextResponse.json({ ok: true, note: 'Logged (email not configured).' })
   try {
-    await resend.emails.send({
+    await client().emails.send({
       from: FROM,
       to: TO,
       subject: `Judgemynt, employer inquiry from ${esc(company || name || email)}`,
