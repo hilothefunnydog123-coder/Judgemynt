@@ -1,0 +1,24 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+# The employer scoreboard is designed to be embedded in a careers page, so it
+# must be framable from anywhere. Everything else keeps the default deny.
+[[headers]]
+  for = "/widget"
+  [headers.values]
+    Content-Security-Policy = "frame-ancestors *"
+    Cross-Origin-Opener-Policy = "unsafe-none"
+
+[[headers]]
+  for = "/api/*"
+  [headers.values]
+    Cache-Control = "no-store"
+
+[[headers]]
+  for = "/_next/static/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"

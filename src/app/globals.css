@@ -1,0 +1,39 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sans);
+  /* The pages use `font-inter` explicitly on body copy; make it resolve to the
+     same face the layout loads rather than silently doing nothing. */
+  --font-inter: var(--font-sans);
+}
+
+:root {
+  /* The deep navy the whole product is drawn on. Judgemynt is dark-only by
+     design — a light mode would fight every gradient in the page. */
+  --background: #040a12;
+  --foreground: #eaf4fa;
+}
+
+html {
+  background: var(--background);
+  color-scheme: dark;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The candidate types long answers into these; let them grow without the page
+   jumping, and keep the caret visible against the dark surface. */
+textarea {
+  caret-color: #00d4aa;
+}
+
+::selection {
+  background: #00d4aa33;
+}
