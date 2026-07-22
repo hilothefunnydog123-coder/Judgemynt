@@ -42,10 +42,20 @@ export function useAuth() {
   }
 
   const signInWithGoogle = async () => {
-    if (!supabase) return { error: 'Supabase not configured' }
+    if (!supabase) {
+      return { error: 'Sign-in is not configured on this deployment. Set the Supabase keys and enable the Google provider.' }
+    }
+    // Redirect back to the page the user was on, minus query and hash: the
+    // PKCE code lands on a clean URL, and a stale ?invite= cannot restart an
+    // assessment after the round-trip to Google.
+    const redirectTo =
+      typeof window !== 'undefined' ? window.location.origin + window.location.pathname : undefined
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: typeof window !== 'undefined' ? window.location.href : undefined },
+      options: {
+        redirectTo,
+        queryParams: { prompt: 'select_account' },
+      },
     })
     return { error: error?.message }
   }

@@ -6,11 +6,12 @@ const inter = Inter({ subsets: ['latin'], variable: '--font-sans' })
 
 const BASE_URL = 'https://judgemynt.com'
 
-const TITLE = 'Judgemynt: prove you can tell when AI is wrong.'
+const TITLE = 'Judgemynt: use any AI you want. That is the point.'
 const DESCRIPTION =
-  'AI can write anything. Judgemynt tests the part it cannot do for you: knowing when it is wrong. ' +
-  'Three levels — detect the flaw, correct the work, direct the AI — graded against a hidden answer key, ' +
-  'across real career tracks. Earn a credential employers can actually check.'
+  'Every screening test broke the day candidates got AI. Judgemynt hands the candidate an AI, ' +
+  'plus the documents the AI does not have, and measures whether they read them. Employers put ' +
+  'their own policies in the exam and get back a scored session, the traps caught or missed, ' +
+  'and the full transcript.'
 
 export const metadata: Metadata = {
   metadataBase: new URL(BASE_URL),

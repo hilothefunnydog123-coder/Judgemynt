@@ -11,7 +11,7 @@
 
 :root {
   /* The deep navy the whole product is drawn on. Judgemynt is dark-only by
-     design — a light mode would fight every gradient in the page. */
+     design: flat surfaces, solid accent colors, high-contrast white text. */
   --background: #040a12;
   --foreground: #eaf4fa;
 }

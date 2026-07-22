@@ -16,6 +16,10 @@ export const supabase = SUPABASE_ENABLED ? createClient(url, key, {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
+    // PKCE is the current recommended OAuth flow: the Google redirect carries a
+    // one-time code instead of tokens in the URL fragment, and supabase-js
+    // exchanges it automatically because detectSessionInUrl is on.
+    flowType: 'pkce',
   },
 }) : null
 

@@ -21,7 +21,6 @@ import type { JmDoc } from '@/lib/tasks'
 import type { TelemetryEvent } from '@/lib/telemetry'
 
 const TEAL = '#00d4aa'
-const BLUE = '#1e90ff'
 const RED = '#ff5470'
 const AMBER = '#f59e0b'
 
@@ -185,7 +184,7 @@ export default function Workspace({
     docsSeen.forEach((id) => tel.current.events.push({ t: 0, kind: 'doc_open', ref: id }))
     setPhase('run')
     setMessages([
-      { role: 'system', content: `TASK — ${cfg?.title}\n\n${cfg?.brief}\n\nDELIVER: ${cfg?.deliverable}` },
+      { role: 'system', content: `TASK: ${cfg?.title}\n\n${cfg?.brief}\n\nDELIVER: ${cfg?.deliverable}` },
       {
         role: 'assistant',
         content: `I'm ${modelInfo?.tag || 'your assistant'}. Tell me what to build and I'll do it. Type /help for commands.`,
@@ -253,7 +252,7 @@ export default function Workspace({
       })
       const d = await res.json()
       if (!res.ok) {
-        sys(d.error || 'AI error — try again.')
+        sys(d.error || 'AI error. Try again.')
         setBusy(false)
         return
       }
@@ -284,7 +283,7 @@ export default function Workspace({
         )
         break
       case 'task':
-        sys(`TASK — ${cfg?.title}\n\n${cfg?.brief}\n\nDELIVER: ${cfg?.deliverable}`)
+        sys(`TASK: ${cfg?.title}\n\n${cfg?.brief}\n\nDELIVER: ${cfg?.deliverable}`)
         break
       case 'docs':
         sys(
@@ -299,7 +298,7 @@ export default function Workspace({
         const i = parseInt(arg, 10) - 1
         const d = cfg?.docs[i]
         if (d) viewDoc(d)
-        else sys('Usage: /open <number> — see /docs')
+        else sys('Usage: /open <number>. See /docs for the list.')
         break
       }
       case 'tokens':
@@ -311,7 +310,7 @@ export default function Workspace({
       case 'model':
         if (models.some((m) => m.id === arg)) {
           setModel(arg)
-          sys(`Switched to ${models.find((m) => m.id === arg)?.tag} — token cost x${models.find((m) => m.id === arg)?.mult}.`)
+          sys(`Switched to ${models.find((m) => m.id === arg)?.tag}. Token cost x${models.find((m) => m.id === arg)?.mult}.`)
         } else sys(`Usage: /model ${models.map((m) => m.id).join(' | ')}`)
         break
       case 'check':
@@ -320,7 +319,7 @@ export default function Workspace({
       case 'reset':
         setMessages((m) => [
           ...m,
-          { role: 'system', content: '· context reset — the AI forgets the prior approach. Spent tokens are not refunded. ·' },
+          { role: 'system', content: '· Context reset. The AI forgets the prior approach. Spent tokens are not refunded. ·' },
           { role: 'assistant', content: `Fresh start. What should I build?` },
         ])
         break
@@ -331,7 +330,7 @@ export default function Workspace({
         end('submit')
         break
       default:
-        sys(`Unknown command: /${c} — try /help`)
+        sys(`Unknown command: /${c}. Try /help.`)
     }
   }
 
@@ -360,9 +359,9 @@ export default function Workspace({
   if (phase === 'brief') {
     return (
       <div className="min-h-screen relative">
-        <Backdrop accent={accent} />
+        <Backdrop />
         <div className="relative max-w-4xl mx-auto px-6 sm:px-10 py-10">
-          <button onClick={onExit} className="flex items-center gap-1 text-white/40 text-sm hover:text-white transition">
+          <button onClick={onExit} className="flex items-center gap-1 text-white font-semibold text-sm hover:text-[#00d4aa] transition">
             <ChevronLeft className="w-4 h-4" /> Judgemynt
           </button>
 
@@ -372,41 +371,41 @@ export default function Workspace({
             </div>
           ) : (
             <>
-              <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.3em] mt-8" style={{ color: accent }}>
+              <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.3em] mt-8" style={{ color: accent }}>
                 <span className="text-base">{cfg.roleEmoji}</span> {cfg.role}
               </div>
               <h1 className="font-podium text-[clamp(2rem,6vw,3.8rem)] uppercase leading-[0.95] mt-3">{cfg.title}</h1>
 
               <div className="mt-7 rounded-2xl border p-6" style={{ background: 'rgba(255,255,255,.025)', borderColor: `${accent}30` }}>
-                <div className="text-[11px] uppercase tracking-widest mb-2" style={{ color: accent }}>The task</div>
-                <p className="text-white/85 leading-relaxed whitespace-pre-wrap">{cfg.brief}</p>
+                <div className="text-[11px] font-bold uppercase tracking-widest mb-2" style={{ color: accent }}>The task</div>
+                <p className="text-white font-medium leading-relaxed whitespace-pre-wrap">{cfg.brief}</p>
                 <div className="mt-5 pt-4 border-t border-white/10">
-                  <div className="text-[11px] uppercase tracking-widest mb-1.5 text-white/40">You must hand in</div>
-                  <p className="text-white/70 text-sm">{cfg.deliverable}</p>
+                  <div className="text-[11px] font-bold uppercase tracking-widest mb-1.5 text-white">You must hand in</div>
+                  <p className="text-white font-medium text-sm">{cfg.deliverable}</p>
                 </div>
               </div>
 
               {cfg.docs.length > 0 && (
                 <div className="mt-6">
                   <div className="flex items-baseline justify-between mb-3">
-                    <div className="text-[11px] uppercase tracking-widest text-white/40">
-                      Context — {cfg.docs.length} document{cfg.docs.length > 1 ? 's' : ''}
+                    <div className="text-[11px] font-bold uppercase tracking-widest text-white">
+                      Context: {cfg.docs.length} document{cfg.docs.length > 1 ? 's' : ''}
                     </div>
-                    <div className="text-[11px] text-white/30">free to read · costs no tokens</div>
+                    <div className="text-[12px] font-bold text-white">free to read · costs no tokens</div>
                   </div>
                   <div className="grid sm:grid-cols-2 gap-2.5">
                     {cfg.docs.map((d) => (
                       <DocCard key={d.id} doc={d} seen={docsSeen.has(d.id)} accent={accent} onOpen={() => viewDoc(d)} />
                     ))}
                   </div>
-                  <p className="text-white/35 text-[13px] mt-3 leading-relaxed">
+                  <p className="text-white font-semibold text-[14px] mt-3 leading-relaxed">
                     You are allowed to use the AI for everything. These documents are the part it does not have.
                   </p>
                 </div>
               )}
 
               <div className="mt-7">
-                <div className="text-[11px] uppercase tracking-widest text-white/40 mb-3">Pick your assistant</div>
+                <div className="text-[11px] font-bold uppercase tracking-widest text-white mb-3">Pick your assistant</div>
                 <div className="grid sm:grid-cols-3 gap-2.5">
                   {models.map((m) => (
                     <button
@@ -425,11 +424,11 @@ export default function Workspace({
                           ×{m.mult}
                         </span>
                       </div>
-                      <div className="text-white/45 text-[12.5px] mt-1.5 leading-snug">{m.blurb}</div>
+                      <div className="text-white font-medium text-[12.5px] mt-1.5 leading-snug">{m.blurb}</div>
                     </button>
                   ))}
                 </div>
-                <p className="text-white/35 text-[13px] mt-3">
+                <p className="text-white font-semibold text-[14px] mt-3">
                   The careful model costs more per message. Choosing well is part of the assessment.
                 </p>
               </div>
@@ -442,10 +441,10 @@ export default function Workspace({
 
               <button
                 onClick={begin}
-                className="mt-7 rounded-full px-8 py-3.5 font-semibold text-[#04121a] transition hover:brightness-110"
-                style={{ background: `linear-gradient(110deg, ${accent}, ${BLUE})`, boxShadow: `0 10px 40px ${accent}33` }}
+                className="mt-7 rounded-full px-8 py-3.5 font-bold text-[#04121a] transition hover:brightness-110"
+                style={{ background: accent }}
               >
-                Start — the clock starts now
+                Start. The clock runs from here.
               </button>
             </>
           )}
@@ -459,7 +458,7 @@ export default function Workspace({
   if (phase === 'run') {
     return (
       <div className="h-screen flex flex-col relative overflow-hidden">
-        <Backdrop accent={accent} />
+        <Backdrop />
 
         {/* meters */}
         <div className="relative flex items-center gap-4 px-4 sm:px-6 py-3 border-b border-white/[0.07] flex-wrap">
@@ -492,7 +491,7 @@ export default function Workspace({
           {/* docs rail */}
           {!!cfg?.docs.length && (
             <aside className="hidden md:flex w-60 flex-col border-r border-white/[0.07] p-3 gap-1.5 overflow-y-auto">
-              <div className="text-[10px] uppercase tracking-widest text-white/30 px-1 pb-1">Context</div>
+              <div className="text-[10px] font-bold uppercase tracking-widest text-white px-1 pb-1">Context</div>
               {cfg.docs.map((d, i) => (
                 <button
                   key={d.id}
@@ -503,15 +502,15 @@ export default function Workspace({
                   <div className="flex items-start gap-2">
                     <FileText className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: docsSeen.has(d.id) ? accent : 'rgba(255,255,255,.3)' }} />
                     <div className="min-w-0">
-                      <div className="text-[12.5px] leading-snug text-white/80 group-hover:text-white">{d.title}</div>
-                      <div className="text-[10px] uppercase tracking-wider text-white/25 mt-0.5" style={{ fontFamily: mono }}>
+                      <div className="text-[12.5px] font-medium leading-snug text-white">{d.title}</div>
+                      <div className="text-[10px] uppercase tracking-wider text-white/70 mt-0.5" style={{ fontFamily: mono }}>
                         {i + 1} · {d.kind}
                       </div>
                     </div>
                   </div>
                 </button>
               ))}
-              <div className="text-[11px] text-white/25 px-1 pt-2 leading-relaxed">Reading these is free. Messaging the AI is not.</div>
+              <div className="text-[12px] font-semibold text-white px-1 pt-2 leading-relaxed">Reading these is free. Messaging the AI is not.</div>
             </aside>
           )}
 
@@ -553,11 +552,11 @@ export default function Workspace({
                   <Send className="w-4 h-4" />
                 </button>
               </div>
-              <div className="flex items-center gap-3 mt-2 text-[11px] text-white/25 flex-wrap">
+              <div className="flex items-center gap-3 mt-2 text-[12px] font-medium text-white/80 flex-wrap">
                 <span><CornerDownLeft className="w-3 h-3 inline" /> send · shift+enter newline</span>
-                <button onClick={() => command('/docs')} className="hover:text-white/60 transition">/docs</button>
-                <button onClick={() => command('/check')} className="hover:text-white/60 transition">/check</button>
-                <button onClick={() => command('/submit')} className="ml-auto hover:text-white/80 transition" style={{ color: accent }}>
+                <button onClick={() => command('/docs')} className="hover:text-[#00d4aa] transition">/docs</button>
+                <button onClick={() => command('/check')} className="hover:text-[#00d4aa] transition">/check</button>
+                <button onClick={() => command('/submit')} className="ml-auto font-bold hover:brightness-125 transition" style={{ color: accent }}>
                   /submit →
                 </button>
               </div>
@@ -573,12 +572,12 @@ export default function Workspace({
   /* ═══════════════════════════ RESULT ═══════════════════════════ */
   return (
     <div className="min-h-screen relative">
-      <Backdrop accent={accent} />
+      <Backdrop />
       <div className="relative max-w-3xl mx-auto px-6 sm:px-10 py-12">
         {busy && !grade && (
           <div className="flex flex-col items-center justify-center h-[60vh] gap-4">
             <Loader2 className="w-6 h-6 animate-spin" style={{ color: accent }} />
-            <div className="text-white/50">The examiner is reading your session…</div>
+            <div className="text-white font-semibold">The examiner is reading your session…</div>
           </div>
         )}
 
@@ -596,15 +595,15 @@ export default function Workspace({
         {grade && (
           <>
             {locked && (
-              <div className="rounded-xl border px-4 py-2.5 mb-6 text-sm" style={{ background: `${RED}0d`, borderColor: `${RED}35`, color: RED }}>
-                Session ended early — you ran out of {locked === 'tokens' ? 'tokens' : 'time'}.
+              <div className="rounded-xl border px-4 py-2.5 mb-6 text-sm font-bold" style={{ background: `${RED}0d`, borderColor: `${RED}35`, color: RED }}>
+                Session ended early: you ran out of {locked === 'tokens' ? 'tokens' : 'time'}.
               </div>
             )}
 
-            <ScoreDial value={grade.overall} passed={grade.passed} passMark={grade.passMark} accent={accent} />
+            <ScoreDial value={grade.overall} passed={grade.passed} passMark={grade.passMark} />
             <div className="text-center mt-4">
               <div className="font-podium text-2xl uppercase" style={{ color: grade.passed ? TEAL : RED }}>{grade.verdict}</div>
-              <div className="text-white/40 text-sm mt-1">{cfg?.title}</div>
+              <div className="text-white font-semibold text-sm mt-1">{cfg?.title}</div>
             </div>
 
             {/* dimensions */}
@@ -617,7 +616,7 @@ export default function Workspace({
             {/* traps — the part people screenshot */}
             {grade.traps.length > 0 && (
               <div className="mt-10">
-                <div className="text-[11px] uppercase tracking-widest text-white/40 mb-3">
+                <div className="text-[11px] font-bold uppercase tracking-widest text-white mb-3">
                   What the documents were hiding
                 </div>
                 <div className="space-y-2">
@@ -636,7 +635,7 @@ export default function Workspace({
                         </div>
                         <div className="min-w-0">
                           <div className="font-semibold text-[14.5px] leading-snug">{t.name}</div>
-                          {t.note && <div className="text-white/50 text-[13px] mt-1 leading-relaxed">{t.note}</div>}
+                          {t.note && <div className="text-white/90 font-medium text-[13px] mt-1 leading-relaxed">{t.note}</div>}
                         </div>
                         {t.weight >= 3 && (
                           <span className="ml-auto shrink-0 text-[10px] uppercase tracking-widest px-2 py-0.5 rounded-full" style={{ background: 'rgba(255,255,255,.06)', color: 'rgba(255,255,255,.45)' }}>
@@ -653,13 +652,13 @@ export default function Workspace({
             {/* how they worked */}
             {!!grade.signals?.notes?.length && (
               <div className="mt-9 rounded-xl border border-white/10 p-5" style={{ background: 'rgba(255,255,255,.02)' }}>
-                <div className="flex items-center gap-2 text-[11px] uppercase tracking-widest text-white/40 mb-3">
+                <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-white mb-3">
                   <Eye className="w-3.5 h-3.5" /> How you worked
                 </div>
                 <ul className="space-y-1.5">
                   {grade.signals.notes.map((n, i) => (
-                    <li key={i} className="text-white/65 text-[13.5px] flex gap-2">
-                      <span className="text-white/20">·</span> {n}
+                    <li key={i} className="text-white font-medium text-[13.5px] flex gap-2">
+                      <span className="text-white/40">·</span> {n}
                     </li>
                   ))}
                 </ul>
@@ -669,16 +668,16 @@ export default function Workspace({
             {/* moves */}
             {!!grade.steps.length && (
               <div className="mt-9">
-                <div className="text-[11px] uppercase tracking-widest text-white/40 mb-3">Your key moves</div>
+                <div className="text-[11px] font-bold uppercase tracking-widest text-white mb-3">Your key moves</div>
                 <div className="space-y-2.5">
                   {grade.steps.map((s, i) => (
                     <div key={i} className="flex gap-3">
-                      <div className="text-[11px] tabular-nums text-white/25 pt-0.5 w-5 shrink-0" style={{ fontFamily: mono }}>
+                      <div className="text-[11px] tabular-nums text-white/70 pt-0.5 w-5 shrink-0" style={{ fontFamily: mono }}>
                         {String(i + 1).padStart(2, '0')}
                       </div>
                       <div className="min-w-0">
-                        <div className="text-[14px] font-medium">{s.move}</div>
-                        <div className="text-white/45 text-[13px] mt-0.5">{s.take}</div>
+                        <div className="text-[14px] font-semibold">{s.move}</div>
+                        <div className="text-white/90 font-medium text-[13px] mt-0.5">{s.take}</div>
                       </div>
                     </div>
                   ))}
@@ -688,15 +687,15 @@ export default function Workspace({
 
             {grade.analysis && (
               <div className="mt-9 rounded-xl border border-white/10 p-5" style={{ background: 'rgba(255,255,255,.02)' }}>
-                <div className="text-[11px] uppercase tracking-widest text-white/40 mb-2">The examiner&apos;s read</div>
-                <p className="text-white/75 leading-relaxed text-[14.5px]">{grade.analysis}</p>
+                <div className="text-[11px] font-bold uppercase tracking-widest text-white mb-2">The examiner&apos;s read</div>
+                <p className="text-white font-medium leading-relaxed text-[14.5px]">{grade.analysis}</p>
               </div>
             )}
 
             {grade.hire && (
               <div className="mt-4 rounded-xl border p-5" style={{ background: `${accent}0a`, borderColor: `${accent}30` }}>
-                <div className="text-[11px] uppercase tracking-widest mb-2" style={{ color: accent }}>The call</div>
-                <p className="text-white/90 leading-relaxed">{grade.hire}</p>
+                <div className="text-[11px] font-bold uppercase tracking-widest mb-2" style={{ color: accent }}>The call</div>
+                <p className="text-white font-semibold leading-relaxed">{grade.hire}</p>
               </div>
             )}
 
@@ -714,33 +713,15 @@ export default function Workspace({
 
 /* ═══════════════════════════ pieces ═══════════════════════════ */
 
-function Backdrop({ accent }: { accent: string }) {
-  return (
-    <>
-      <div
-        className="pointer-events-none fixed inset-0 -z-10"
-        style={{
-          background: `radial-gradient(900px 500px at 15% -10%, ${accent}14, transparent 60%),
-                       radial-gradient(700px 400px at 90% 0%, ${BLUE}0f, transparent 55%)`,
-        }}
-      />
-      {/* A faint grain layer — it is the cheapest way to stop large flat dark
-          areas from banding on ordinary monitors. */}
-      <div
-        className="pointer-events-none fixed inset-0 -z-10 opacity-[0.035] mix-blend-overlay"
-        style={{
-          backgroundImage:
-            "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E\")",
-        }}
-      />
-      <style>{`@keyframes rise{0%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-14px)}}`}</style>
-    </>
-  )
+/* Flat background by design. This only carries the keyframes the token-cost
+   flash animation needs. */
+function Backdrop() {
+  return <style>{`@keyframes rise{0%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-14px)}}`}</style>
 }
 
 function Meter({ icon, label }: { icon: ReactNode; label: string }) {
   return (
-    <span className="flex items-center gap-1.5 text-white/45">
+    <span className="flex items-center gap-1.5 text-white font-semibold">
       {icon} {label}
     </span>
   )
@@ -756,8 +737,8 @@ function DocCard({ doc, seen, accent, onOpen }: { doc: JmDoc; seen: boolean; acc
       <div className="flex items-start gap-2.5">
         <FileText className="w-4 h-4 mt-0.5 shrink-0" style={{ color: seen ? accent : 'rgba(255,255,255,.35)' }} />
         <div className="min-w-0">
-          <div className="text-[14px] leading-snug">{doc.title}</div>
-          <div className="text-[10px] uppercase tracking-widest text-white/30 mt-1" style={{ fontFamily: mono }}>
+          <div className="text-[14px] font-medium leading-snug">{doc.title}</div>
+          <div className="text-[10px] font-bold uppercase tracking-widest text-white/70 mt-1" style={{ fontFamily: mono }}>
             {doc.kind} {seen && '· read'}
           </div>
         </div>
@@ -819,9 +800,9 @@ function Bubble({ msg, accent, modelTag, modelAccent }: { msg: Msg; accent: stri
     <div>
       <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-widest mb-1.5" style={{ color: modelAccent }}>
         {modelTag}
-        {msg.cost !== undefined && <span className="text-white/25 tracking-normal normal-case" style={{ fontFamily: mono }}>· {msg.cost} tokens</span>}
+        {msg.cost !== undefined && <span className="text-white/70 tracking-normal normal-case" style={{ fontFamily: mono }}>· {msg.cost} tokens</span>}
       </div>
-      <div className="text-[14.5px] leading-relaxed whitespace-pre-wrap text-white/85">{msg.content}</div>
+      <div className="text-[14.5px] leading-relaxed whitespace-pre-wrap text-white">{msg.content}</div>
     </div>
   )
 }
@@ -831,7 +812,7 @@ function Bar({ label, value, accent }: { label: string; value: number; accent: s
   return (
     <div>
       <div className="flex items-baseline justify-between mb-1.5">
-        <span className="text-[13px] text-white/65">{label}</span>
+        <span className="text-[13px] font-semibold text-white">{label}</span>
         <span className="text-[13px] tabular-nums" style={{ fontFamily: mono, color }}>{value}</span>
       </div>
       <div className="h-1.5 rounded-full bg-white/[0.07] overflow-hidden">
@@ -841,7 +822,7 @@ function Bar({ label, value, accent }: { label: string; value: number; accent: s
   )
 }
 
-function ScoreDial({ value, passed, passMark, accent }: { value: number; passed: boolean; passMark: number; accent: string }) {
+function ScoreDial({ value, passed, passMark }: { value: number; passed: boolean; passMark: number }) {
   const [shown, setShown] = useState(0)
   useEffect(() => {
     // Count up rather than snap: the number is the payoff of the whole session.
@@ -876,7 +857,7 @@ function ScoreDial({ value, passed, passMark, accent }: { value: number; passed:
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <div className="font-podium text-6xl tabular-nums" style={{ color }}>{shown}</div>
-          <div className="text-[10px] uppercase tracking-widest text-white/35 mt-1">pass at {passMark}</div>
+          <div className="text-[10px] font-bold uppercase tracking-widest text-white mt-1">pass at {passMark}</div>
         </div>
       </div>
     </div>

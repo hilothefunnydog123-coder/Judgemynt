@@ -1,11 +1,11 @@
 /* ════════════════════════════════════════════════════════════════════════
-   Judgemynt — the rubric.
+   Judgemynt, the rubric.
 
    A rubric is the part a company actually wants to own. Two teams hiring for
    the "same" role want different things: an agency cares that the deliverable
    is shippable, a platform team cares that the candidate noticed the
    constraint nobody wrote down. Rather than shipping one opinion, a role
-   carries a rubric — which dimensions count, how much each is worth, what the
+   carries a rubric, which dimensions count, how much each is worth, what the
    bar is, and any house rules the examiner should apply.
 
    Weights are relative, not percentages; they are normalised at scoring time
@@ -17,7 +17,7 @@ export interface Dimension {
   label: string
   /** Relative weight. Normalised against the other dimensions in the rubric. */
   weight: number
-  /** Handed to the examiner verbatim — this is what the dimension MEANS here. */
+  /** Handed to the examiner verbatim, this is what the dimension MEANS here. */
   prompt: string
 }
 
@@ -59,14 +59,14 @@ export const DIMENSION_LIBRARY: Dimension[] = [
     label: 'Efficiency',
     weight: 1,
     prompt:
-      'How surgically did they spend tokens and time? Few precise moves that land = high. Flailing, re-asking the same thing, or running out = low. Do not reward speed that produced a worse deliverable — finishing early with a wrong answer is not efficient.',
+      'How surgically did they spend tokens and time? Few precise moves that land = high. Flailing, re-asking the same thing, or running out = low. Do not reward speed that produced a worse deliverable, finishing early with a wrong answer is not efficient.',
   },
   {
     id: 'communication',
     label: 'Communication',
     weight: 1,
     prompt:
-      'If the deliverable is something a human will read — an email, a spec, slide copy — judge whether it lands with its actual audience. Plain, specific, and appropriately brief scores high.',
+      'If the deliverable is something a human will read, an email, a spec, slide copy, judge whether it lands with its actual audience. Plain, specific, and appropriately brief scores high.',
   },
 ]
 

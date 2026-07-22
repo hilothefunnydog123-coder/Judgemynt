@@ -44,15 +44,15 @@ export default function WidgetPage() {
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-        <span style={{ width: 22, height: 22, borderRadius: 6, background: `linear-gradient(135deg, ${TEAL}, #1e90ff)`, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#06121f', fontWeight: 900, fontSize: 10 }}>JM</span>
+        <span style={{ width: 22, height: 22, borderRadius: 6, background: TEAL, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#06121f', fontWeight: 900, fontSize: 10 }}>JM</span>
         <span style={{ fontWeight: 800, fontSize: 14 }}>Verified by Judgemynt</span>
-        <span style={{ marginLeft: 'auto', fontSize: 10, color: '#46596b', letterSpacing: 1, textTransform: 'uppercase' }}>AI Judgment Exam</span>
+        <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 700, color: '#eaf4fa', letterSpacing: 1, textTransform: 'uppercase' }}>AI Judgment Exam</span>
       </div>
 
       {!loaded ? (
-        <div style={{ color: '#7d97ab', fontSize: 13, padding: '24px 0', textAlign: 'center' }}>Loading…</div>
+        <div style={{ color: '#eaf4fa', fontWeight: 600, fontSize: 13, padding: '24px 0', textAlign: 'center' }}>Loading…</div>
       ) : rows.length === 0 ? (
-        <div style={{ color: '#7d97ab', fontSize: 13, padding: '24px 0', textAlign: 'center' }}>No verified candidates yet.</div>
+        <div style={{ color: '#eaf4fa', fontWeight: 600, fontSize: 13, padding: '24px 0', textAlign: 'center' }}>No verified candidates yet.</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {rows.map((r, i) => (
@@ -60,7 +60,7 @@ export default function WidgetPage() {
               <span style={{ width: 40, fontWeight: 900, fontSize: 18, color: band(r.score), fontVariantNumeric: 'tabular-nums' }}>{r.score ?? '--'}</span>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 700, fontSize: 14 }}>{r.candidate_name || 'Anonymous'}</div>
-                {r.verdict && <div style={{ fontSize: 12, color: '#7d97ab', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.verdict}</div>}
+                {r.verdict && <div style={{ fontSize: 12, fontWeight: 500, color: '#eaf4fa', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.verdict}</div>}
               </div>
             </div>
           ))}

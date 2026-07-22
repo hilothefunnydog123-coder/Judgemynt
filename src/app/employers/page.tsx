@@ -16,7 +16,6 @@ import {
 import { useAuth } from '@/hooks/useAuth'
 
 const TEAL = '#00d4aa'
-const BLUE = '#1e90ff'
 const RED = '#ff5470'
 const mono = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
 
@@ -190,20 +189,25 @@ export default function Employers() {
       <Shell>
         <div className="max-w-md mx-auto text-center pt-24">
           <div className="font-podium text-3xl uppercase">Employers only</div>
-          <p className="text-white/50 mt-3 leading-relaxed">
+          <p className="text-white font-medium mt-3 leading-relaxed">
             Sign in to build an assessment out of your own documents, send it to candidates, and
             read what came back.
           </p>
           <button
-            onClick={signInWithGoogle}
-            className="mt-6 rounded-full px-7 py-3.5 font-semibold text-[#04121a]"
-            style={{ background: `linear-gradient(110deg, ${TEAL}, ${BLUE})` }}
+            onClick={async () => {
+              setErr('')
+              const r = await signInWithGoogle()
+              if (r?.error) setErr(r.error)
+            }}
+            className="mt-6 rounded-full px-7 py-3.5 font-semibold text-[#04121a] hover:brightness-110 transition"
+            style={{ background: TEAL }}
           >
             Sign in with Google
           </button>
-          <div className="mt-10 text-white/30 text-sm">
+          {err && <Banner tone="bad">{err}</Banner>}
+          <div className="mt-10 text-white font-medium text-sm">
             Not hiring?{' '}
-            <Link href="/" className="underline hover:text-white/60">
+            <Link href="/" className="underline hover:text-[#00d4aa]">
               Take an assessment instead
             </Link>
           </div>
@@ -217,7 +221,7 @@ export default function Employers() {
     const preset = presets.find((p) => p.id === editing.task_id)
     return (
       <Shell>
-        <button onClick={() => setEditing(null)} className="flex items-center gap-1 text-white/45 text-sm hover:text-white transition">
+        <button onClick={() => setEditing(null)} className="flex items-center gap-1 text-white font-semibold text-sm hover:text-[#00d4aa] transition">
           <ChevronLeft className="w-4 h-4" /> All roles
         </button>
 
@@ -231,7 +235,7 @@ export default function Employers() {
           <input
             value={editing.name}
             onChange={(e) => setEditing({ ...editing, name: e.target.value })}
-            placeholder="Support Specialist — final round"
+            placeholder="Support Specialist, final round"
             className="w-full bg-white/[0.04] border border-white/10 focus:border-white/30 rounded-xl px-3.5 py-2.5 outline-none transition"
           />
         </Field>
@@ -276,8 +280,8 @@ export default function Employers() {
                   <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest" style={{ color: t.color }}>
                     <span>{t.roleEmoji}</span> {t.role}
                   </div>
-                  <div className="text-[14px] mt-2 leading-snug">{t.title}</div>
-                  <div className="text-white/35 text-[12px] mt-1">{t.docs.length} built-in documents</div>
+                  <div className="text-[14px] font-medium mt-2 leading-snug">{t.title}</div>
+                  <div className="text-white/80 text-[12px] font-medium mt-1">{t.docs.length} built-in documents</div>
                 </button>
               ))}
             </div>
@@ -287,7 +291,7 @@ export default function Employers() {
                 value={editing.brief || ''}
                 onChange={(e) => setEditing({ ...editing, brief: e.target.value })}
                 rows={5}
-                placeholder="What is the candidate being asked to do? Write it as you would brief a new hire — the AI they direct sees this too."
+                placeholder="What is the candidate being asked to do? Write it as you would brief a new hire. The AI they direct sees this too."
                 className="w-full bg-white/[0.04] border border-white/10 focus:border-white/30 rounded-xl px-3.5 py-2.5 outline-none resize-y transition"
               />
               <input
@@ -319,12 +323,12 @@ export default function Employers() {
         >
           {editing.kind === 'preset' && preset && preset.docs.length > 0 && (
             <div className="mb-3 rounded-xl border border-white/[0.08] p-3 bg-white/[0.02]">
-              <div className="text-[11px] uppercase tracking-widest text-white/35 mb-2">
-                Built in to this task — kept automatically
+              <div className="text-[11px] font-bold uppercase tracking-widest text-white mb-2">
+                Built in to this task, kept automatically
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {preset.docs.map((d) => (
-                  <span key={d.id} className="text-[11.5px] px-2 py-1 rounded-full bg-white/[0.05] text-white/55">
+                  <span key={d.id} className="text-[11.5px] font-medium px-2 py-1 rounded-full bg-white/[0.05] text-white">
                     {d.title}
                   </span>
                 ))}
@@ -344,7 +348,7 @@ export default function Employers() {
                       docs[i] = { ...d, title: e.target.value }
                       setEditing({ ...editing, docs })
                     }}
-                    placeholder="Document title — e.g. 'Refund policy (internal)'"
+                    placeholder="Document title, e.g. 'Refund policy (internal)'"
                     className="flex-1 bg-transparent outline-none text-[14px]"
                   />
                   <select
@@ -378,7 +382,7 @@ export default function Employers() {
                     setEditing({ ...editing, docs })
                   }}
                   rows={5}
-                  placeholder="Paste the document. Anything the candidate should be able to look up — and anything that changes what the right answer is."
+                  placeholder="Paste the document. Anything the candidate should be able to look up, and anything that changes what the right answer is."
                   className="w-full mt-2.5 bg-black/25 border border-white/[0.07] rounded-lg px-3 py-2 outline-none resize-y text-[13px] leading-relaxed"
                   style={{ fontFamily: mono }}
                 />
@@ -451,13 +455,13 @@ export default function Employers() {
           </div>
         </Field>
 
-        <Field label="Rubric" hint="What you actually care about. Weights are relative — 3 and 1 means the first counts three times as much.">
+        <Field label="Rubric" hint="What you actually care about. Weights are relative: 3 and 1 means the first counts three times as much.">
           <div className="space-y-2.5">
             {editing.rubric.dimensions.map((d, i) => (
               <div key={d.id} className="flex items-center gap-3 rounded-xl border border-white/10 p-3 bg-white/[0.02]">
                 <div className="flex-1 min-w-0">
-                  <div className="text-[14px]">{d.label}</div>
-                  <div className="text-white/35 text-[12.5px] mt-0.5 line-clamp-2">{d.prompt}</div>
+                  <div className="text-[14px] font-semibold">{d.label}</div>
+                  <div className="text-white/80 text-[12.5px] font-medium mt-0.5 line-clamp-2">{d.prompt}</div>
                 </div>
                 <input
                   type="range"
@@ -535,7 +539,7 @@ export default function Employers() {
             value={editing.rubric.houseRules || ''}
             onChange={(e) => setEditing({ ...editing, rubric: { ...editing.rubric, houseRules: e.target.value } })}
             rows={3}
-            placeholder="House rules for the examiner. e.g. 'We hire for bluntness — do not reward hedging.' These override our defaults where they conflict."
+            placeholder="House rules for the examiner. e.g. 'We hire for bluntness. Do not reward hedging.' These override our defaults where they conflict."
             className="w-full mt-3 bg-white/[0.04] border border-white/10 focus:border-white/30 rounded-xl px-3.5 py-2.5 outline-none resize-y text-[14px] transition"
           />
         </Field>
@@ -544,8 +548,8 @@ export default function Employers() {
           <button
             onClick={saveRole}
             disabled={busy || !editing.name.trim()}
-            className="rounded-full px-7 py-3 font-semibold text-[#04121a] disabled:opacity-40 transition"
-            style={{ background: `linear-gradient(110deg, ${TEAL}, ${BLUE})` }}
+            className="rounded-full px-7 py-3 font-bold text-[#04121a] disabled:opacity-40 hover:brightness-110 transition"
+            style={{ background: TEAL }}
           >
             {busy ? 'Saving…' : 'Save role'}
           </button>
@@ -562,7 +566,7 @@ export default function Employers() {
     <Shell>
       <div className="flex items-center gap-3 flex-wrap">
         <h1 className="font-podium text-[clamp(1.8rem,5vw,3rem)] uppercase">Your assessments</h1>
-        <button onClick={signOut} className="ml-auto text-white/35 hover:text-white text-[13.5px] transition">
+        <button onClick={signOut} className="ml-auto text-white font-semibold hover:text-[#00d4aa] text-[13.5px] transition">
           Sign out
         </button>
       </div>
@@ -592,8 +596,8 @@ export default function Employers() {
         <>
           <button
             onClick={() => setEditing(blankRole())}
-            className="mt-6 flex items-center gap-2 rounded-full px-5 py-2.5 font-semibold text-[#04121a] transition hover:brightness-110"
-            style={{ background: `linear-gradient(110deg, ${TEAL}, ${BLUE})` }}
+            className="mt-6 flex items-center gap-2 rounded-full px-5 py-2.5 font-bold text-[#04121a] transition hover:brightness-110"
+            style={{ background: TEAL }}
           >
             <Plus className="w-4 h-4" /> New role
           </button>
@@ -601,7 +605,7 @@ export default function Employers() {
           {roles.length === 0 && !busy && (
             <div className="mt-8 rounded-2xl border border-white/[0.09] p-8 text-center" style={{ background: 'rgba(255,255,255,.02)' }}>
               <div className="font-podium text-xl uppercase">No roles yet</div>
-              <p className="text-white/45 mt-2 max-w-md mx-auto leading-relaxed">
+              <p className="text-white font-medium mt-2 max-w-md mx-auto leading-relaxed">
                 A role is one assessment: a task, your documents, your rubric, and a link you send.
                 Start from a built-in task and paste one of your real policies into it.
               </p>
@@ -633,7 +637,7 @@ export default function Employers() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-4 mt-2.5 text-[12px] text-white/35" style={{ fontFamily: mono }}>
+                  <div className="flex items-center gap-4 mt-2.5 text-[12px] text-white/80" style={{ fontFamily: mono }}>
                     <span>{r.docs.length} own docs</span>
                     <span>{(r.budget_tokens / 1000).toFixed(0)}k tokens</span>
                     <span>{Math.round(r.budget_seconds / 60)}m</span>
@@ -656,8 +660,8 @@ export default function Employers() {
 
           {companyId && (
             <div className="mt-10 rounded-2xl border border-white/[0.09] p-5" style={{ background: 'rgba(255,255,255,.02)' }}>
-              <div className="text-[11px] uppercase tracking-widest text-white/40 mb-2">Embed your scoreboard</div>
-              <p className="text-white/45 text-[13.5px] mb-3">
+              <div className="text-[11px] font-bold uppercase tracking-widest text-white mb-2">Embed your scoreboard</div>
+              <p className="text-white font-medium text-[14px] mb-3">
                 Drop this on your careers page. Shows first names and scores only.
               </p>
               <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/25 px-3 py-2">
@@ -686,7 +690,7 @@ export default function Employers() {
           {results.length === 0 && !busy && (
             <div className="rounded-2xl border border-white/[0.09] p-8 text-center" style={{ background: 'rgba(255,255,255,.02)' }}>
               <div className="font-podium text-xl uppercase">Nothing back yet</div>
-              <p className="text-white/45 mt-2">Send a role link to a candidate and their session lands here.</p>
+              <p className="text-white font-medium mt-2">Send a role link to a candidate and their session lands here.</p>
             </div>
           )}
           <div className="space-y-2">
@@ -705,15 +709,15 @@ export default function Employers() {
                     fontFamily: mono,
                   }}
                 >
-                  {r.score ?? '—'}
+                  {r.score ?? '--'}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-[14.5px] truncate">{r.candidate_name || r.candidate_email || 'Anonymous'}</div>
-                  <div className="text-white/40 text-[12.5px] truncate">
-                    {r.role_name || 'Assessment'} · {r.verdict || '—'}
+                  <div className="text-[14.5px] font-semibold truncate">{r.candidate_name || r.candidate_email || 'Anonymous'}</div>
+                  <div className="text-white/80 font-medium text-[12.5px] truncate">
+                    {r.role_name || 'Assessment'} · {r.verdict || '--'}
                   </div>
                 </div>
-                <div className="text-white/25 text-[11.5px] shrink-0 hidden sm:block" style={{ fontFamily: mono }}>
+                <div className="text-white/70 text-[11.5px] shrink-0 hidden sm:block" style={{ fontFamily: mono }}>
                   {new Date(r.created_at).toLocaleDateString()}
                 </div>
                 <Eye className="w-4 h-4 text-white/25 shrink-0" />
@@ -735,16 +739,12 @@ function Shell({ children }: { children: ReactNode }) {
     <div className="min-h-screen text-[#eaf4fa]">
       <link rel="stylesheet" href="https://db.onlinewebfonts.com/c/8b75d9dcff6a48c35a46656192adf019?family=FSP+DEMO+-+PODIUM+Sharp+4.11" />
       <style>{`.font-podium{font-family:"FSP DEMO - PODIUM Sharp 4.11", var(--font-sans), system-ui, sans-serif;}`}</style>
-      <div
-        className="pointer-events-none fixed inset-0 -z-10"
-        style={{ background: `radial-gradient(800px 500px at 12% -8%, ${TEAL}14, transparent 60%), radial-gradient(700px 420px at 88% 4%, ${BLUE}10, transparent 58%)` }}
-      />
       <nav className="flex items-center gap-4 px-5 sm:px-8 py-5 max-w-5xl mx-auto">
         <Link href="/" className="font-podium text-xl uppercase tracking-wider">
           Judgemynt
         </Link>
-        <span className="text-white/25">/</span>
-        <span className="text-white/50 text-[13.5px]">Employers</span>
+        <span className="text-white/40">/</span>
+        <span className="text-white font-semibold text-[13.5px]">Employers</span>
       </nav>
       <main className="max-w-5xl mx-auto px-5 sm:px-8 pb-20">{children}</main>
     </div>
@@ -754,8 +754,8 @@ function Shell({ children }: { children: ReactNode }) {
 function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
     <div className="mt-8">
-      <div className="text-[11px] uppercase tracking-widest text-white/45">{label}</div>
-      {hint && <p className="text-white/35 text-[13px] mt-1 mb-3 leading-relaxed max-w-2xl">{hint}</p>}
+      <div className="text-[11px] font-bold uppercase tracking-widest text-white">{label}</div>
+      {hint && <p className="text-white font-medium text-[14px] mt-1 mb-3 leading-relaxed max-w-2xl">{hint}</p>}
       <div className={hint ? '' : 'mt-3'}>{children}</div>
     </div>
   )
@@ -812,11 +812,11 @@ function ResultModal({ r, onClose }: { r: Result; onClose: () => void }) {
             className="w-12 h-12 rounded-xl flex items-center justify-center font-bold text-lg tabular-nums"
             style={{ background: r.passed ? `${TEAL}16` : `${RED}14`, color: r.passed ? TEAL : RED, fontFamily: mono }}
           >
-            {r.score ?? '—'}
+            {r.score ?? '--'}
           </div>
           <div className="min-w-0">
             <div className="font-semibold leading-tight truncate">{r.candidate_name || 'Anonymous'}</div>
-            <div className="text-white/40 text-[12.5px] truncate">
+            <div className="text-white/80 font-medium text-[12.5px] truncate">
               {r.candidate_email} · {r.role_name || 'Assessment'}
             </div>
           </div>
@@ -826,7 +826,7 @@ function ResultModal({ r, onClose }: { r: Result; onClose: () => void }) {
         </div>
 
         <div className="px-5 py-5 space-y-6">
-          <div className="flex items-center gap-3 flex-wrap text-[12px] text-white/40" style={{ fontFamily: mono }}>
+          <div className="flex items-center gap-3 flex-wrap text-[12px] text-white/80" style={{ fontFamily: mono }}>
             <span>{r.verdict}</span>
             {r.model && <span>· {r.model}</span>}
             {r.tokens_used !== null && <span>· {r.tokens_used} tokens</span>}
@@ -839,8 +839,8 @@ function ResultModal({ r, onClose }: { r: Result; onClose: () => void }) {
               {dims.map(([k, v]) => (
                 <div key={k}>
                   <div className="flex justify-between text-[12.5px] mb-1">
-                    <span className="text-white/60 capitalize">{k}</span>
-                    <span className="tabular-nums text-white/50" style={{ fontFamily: mono }}>{v}</span>
+                    <span className="text-white font-semibold capitalize">{k}</span>
+                    <span className="tabular-nums text-white font-semibold" style={{ fontFamily: mono }}>{v}</span>
                   </div>
                   <div className="h-1.5 rounded-full bg-white/[0.07] overflow-hidden">
                     <div className="h-full rounded-full" style={{ width: `${v}%`, background: v >= 70 ? TEAL : v >= 45 ? '#f59e0b' : RED }} />
@@ -852,7 +852,7 @@ function ResultModal({ r, onClose }: { r: Result; onClose: () => void }) {
 
           {!!r.traps?.length && (
             <div>
-              <div className="text-[11px] uppercase tracking-widest text-white/40 mb-2.5">What they caught</div>
+              <div className="text-[11px] font-bold uppercase tracking-widest text-white mb-2.5">What they caught</div>
               <div className="space-y-2">
                 {r.traps.map((t) => (
                   <div key={t.id} className="flex gap-2.5 text-[13.5px]">
@@ -860,8 +860,8 @@ function ResultModal({ r, onClose }: { r: Result; onClose: () => void }) {
                       {t.resolved ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
                     </span>
                     <div>
-                      <div className="text-white/80">{t.name}</div>
-                      {t.note && <div className="text-white/40 text-[12.5px] mt-0.5">{t.note}</div>}
+                      <div className="text-white font-semibold">{t.name}</div>
+                      {t.note && <div className="text-white/90 font-medium text-[12.5px] mt-0.5">{t.note}</div>}
                     </div>
                   </div>
                 ))}
@@ -871,11 +871,11 @@ function ResultModal({ r, onClose }: { r: Result; onClose: () => void }) {
 
           {!!r.signals?.notes?.length && (
             <div>
-              <div className="text-[11px] uppercase tracking-widest text-white/40 mb-2">How they worked</div>
+              <div className="text-[11px] font-bold uppercase tracking-widest text-white mb-2">How they worked</div>
               <ul className="space-y-1">
                 {r.signals.notes.map((n, i) => (
-                  <li key={i} className="text-white/55 text-[13px] flex gap-2">
-                    <span className="text-white/20">·</span> {n}
+                  <li key={i} className="text-white font-medium text-[13px] flex gap-2">
+                    <span className="text-white/40">·</span> {n}
                   </li>
                 ))}
               </ul>
@@ -884,15 +884,15 @@ function ResultModal({ r, onClose }: { r: Result; onClose: () => void }) {
 
           {r.analysis && (
             <div>
-              <div className="text-[11px] uppercase tracking-widest text-white/40 mb-2">Examiner</div>
-              <p className="text-white/70 text-[13.5px] leading-relaxed">{r.analysis}</p>
+              <div className="text-[11px] font-bold uppercase tracking-widest text-white mb-2">Examiner</div>
+              <p className="text-white font-medium text-[13.5px] leading-relaxed">{r.analysis}</p>
             </div>
           )}
 
           {r.hire && (
             <div className="rounded-xl border p-4" style={{ background: `${TEAL}0a`, borderColor: `${TEAL}30` }}>
-              <div className="text-[11px] uppercase tracking-widest mb-1.5" style={{ color: TEAL }}>The call</div>
-              <p className="text-white/85 text-[14px] leading-relaxed">{r.hire}</p>
+              <div className="text-[11px] font-bold uppercase tracking-widest mb-1.5" style={{ color: TEAL }}>The call</div>
+              <p className="text-white font-semibold text-[14px] leading-relaxed">{r.hire}</p>
             </div>
           )}
 
@@ -900,7 +900,7 @@ function ResultModal({ r, onClose }: { r: Result; onClose: () => void }) {
             <div>
               <button
                 onClick={() => setShowTranscript((s) => !s)}
-                className="flex items-center gap-1.5 text-[13px] text-white/50 hover:text-white transition"
+                className="flex items-center gap-1.5 text-[13px] font-semibold text-white hover:text-[#00d4aa] transition"
               >
                 <ChevronDown className={`w-4 h-4 transition ${showTranscript ? 'rotate-180' : ''}`} />
                 {showTranscript ? 'Hide' : 'Show'} full session ({r.transcript.length} messages)
@@ -909,10 +909,10 @@ function ResultModal({ r, onClose }: { r: Result; onClose: () => void }) {
                 <div className="mt-3 space-y-2.5 max-h-[50vh] overflow-y-auto rounded-xl border border-white/[0.08] bg-black/25 p-3.5">
                   {r.transcript.map((m, i) => (
                     <div key={i}>
-                      <div className="text-[10px] uppercase tracking-widest text-white/30 mb-0.5" style={{ fontFamily: mono }}>
+                      <div className="text-[10px] font-bold uppercase tracking-widest text-white/70 mb-0.5" style={{ fontFamily: mono }}>
                         {m.role === 'user' ? 'candidate' : m.role}
                       </div>
-                      <div className="text-[13px] text-white/70 whitespace-pre-wrap leading-relaxed">{m.content}</div>
+                      <div className="text-[13px] text-white/90 whitespace-pre-wrap leading-relaxed">{m.content}</div>
                     </div>
                   ))}
                 </div>

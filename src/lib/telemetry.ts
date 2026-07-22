@@ -114,9 +114,9 @@ export function deriveSignals(tel: Telemetry, docsAvailable: number): ProcessSig
     n.push(`${Math.round(signals.pasteShare * 100)}% of their input was pasted rather than typed.`)
   }
   if (signals.medianThinkTime >= 25) {
-    n.push(`Sat with each reply for ${signals.medianThinkTime}s before responding — read before reacting.`)
+    n.push(`Sat with each reply for ${signals.medianThinkTime}s before responding. Read before reacting.`)
   } else if (signals.medianThinkTime > 0 && signals.medianThinkTime < 6 && signals.turns > 3) {
-    n.push(`Median ${signals.medianThinkTime}s between the AI replying and the next instruction — moved fast.`)
+    n.push(`Median ${signals.medianThinkTime}s between the AI replying and the next instruction. Moved fast.`)
   }
   if (signals.turns <= 2) n.push(`Only ${signals.turns} instruction(s) sent in total.`)
   if (signals.commands.length) n.push(`Used ${signals.commands.map((c) => '/' + c).join(', ')}.`)

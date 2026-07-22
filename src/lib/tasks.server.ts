@@ -1,15 +1,15 @@
 /* ════════════════════════════════════════════════════════════════════════
-   Judgemynt — the answer key. SERVER ONLY.
+   Judgemynt, the answer key. SERVER ONLY.
 
    Never import this from a client component. It is the half of every task the
-   candidate must not see: the checkable requirements, and the traps — the
+   candidate must not see: the checkable requirements, and the traps, the
    judgment calls that separate someone who read the context pack from someone
    who forwarded the brief to a chatbot and shipped the first answer.
 
    A trap is scored on whether the candidate RESOLVED it, not on whether they
    used particular words. `tell` is guidance for the examiner about what
    resolving it actually looks like, including the specific wrong answer that
-   an undirected AI produces — because that wrong answer is the signal.
+   an undirected AI produces, because that wrong answer is the signal.
    ════════════════════════════════════════════════════════════════════════ */
 import 'server-only'
 
@@ -21,7 +21,7 @@ export interface Trap {
   naive: string
   /** What resolving it looks like. */
   tell: string
-  /** Traps are weighted — some are judgment, some are catastrophic. */
+  /** Traps are weighted, some are judgment, some are catastrophic. */
   weight: 1 | 2 | 3
 }
 
@@ -47,7 +47,7 @@ export const TASK_KEYS: Record<string, TaskKey> = {
         id: 'transliterate',
         name: 'Accented characters must transliterate, not vanish',
         naive:
-          'Strips non-ascii with a regex, so "Café" becomes "caf" and "Björk" becomes "bjrk" — the exact bug the #eng-cms thread says was rolled back.',
+          'Strips non-ascii with a regex, so "Café" becomes "caf" and "Björk" becomes "bjrk", the exact bug the #eng-cms thread says was rolled back.',
         tell:
           'Normalizes (NFD + combining-mark strip, or an explicit map) BEFORE the strip step, so "Café culture in Montréal" produces "cafe-culture-in-montreal" and matches the live URL sample.',
         weight: 3,
@@ -65,7 +65,7 @@ export const TASK_KEYS: Record<string, TaskKey> = {
         name: 'Operation order is deliberate',
         naive: 'Strips before replacing spaces, so "a b" loses the separator, or trims before collapsing and leaves a trailing hyphen after the cap.',
         tell:
-          'Transliterate, lowercase, replace separators, strip, collapse, cap-to-word, then trim — and the trim happens after the cap so no slug ends in a hyphen.',
+          'Transliterate, lowercase, replace separators, strip, collapse, cap-to-word, then trim, and the trim happens after the cap so no slug ends in a hyphen.',
         weight: 2,
       },
       {
@@ -73,7 +73,7 @@ export const TASK_KEYS: Record<string, TaskKey> = {
         name: 'Noticed that changing a slug is a 404',
         naive: 'Never mentions the existing URLs; treats this as a greenfield function.',
         tell:
-          'Says out loud, to the AI or in their note, that the output has to reproduce the live slug sample because indexed URLs break otherwise — and ideally checks their function against those exact rows.',
+          'Says out loud, to the AI or in their note, that the output has to reproduce the live slug sample because indexed URLs break otherwise, and ideally checks their function against those exact rows.',
         weight: 2,
       },
     ],
@@ -95,7 +95,7 @@ export const TASK_KEYS: Record<string, TaskKey> = {
         naive:
           'Politely declines because 45 days is past the 30-day window, or escalates to a manager. This is the answer an AI gives with the ticket alone.',
         tell:
-          'Cross-references the incident log with the account: northlinedesign.com is EU, created 2026-05-30, and the 2026-06-02 Sev-1 EU auth outage ran 6h20m — inside their first 14 days and over the 4-hour bar. Exception (a) applies, so the refund is issued without escalation.',
+          'Cross-references the incident log with the account: northlinedesign.com is EU, created 2026-05-30, and the 2026-06-02 Sev-1 EU auth outage ran 6h20m, inside their first 14 days and over the 4-hour bar. Exception (a) applies, so the refund is issued without escalation.',
         weight: 3,
       },
       {
@@ -109,7 +109,7 @@ export const TASK_KEYS: Record<string, TaskKey> = {
         id: 'nopolicyleak',
         name: 'Did not read the internal exception list to the customer',
         naive:
-          'Explains the exception criteria in the email — "because you had a Sev-1 in your first 14 days" — which the policy explicitly says not to advertise.',
+          'Explains the exception criteria in the email, "because you had a Sev-1 in your first 14 days", which the policy explicitly says not to advertise.',
         tell:
           'Acknowledges the outage and their experience specifically, issues the refund, and never recites the criteria or implies a general policy that others could claim.',
         weight: 2,
@@ -123,7 +123,7 @@ export const TASK_KEYS: Record<string, TaskKey> = {
       },
     ],
     ideal:
-      'A short, human email that apologises for the specific outage, confirms the full annual refund with timing, and leaves the door open — with an internal note showing the exception was found by cross-referencing the incident log with the account region and creation date.',
+      'A short, human email that apologises for the specific outage, confirms the full annual refund with timing, and leaves the door open, with an internal note showing the exception was found by cross-referencing the incident log with the account region and creation date.',
   },
 
   launch: {
@@ -138,7 +138,7 @@ export const TASK_KEYS: Record<string, TaskKey> = {
         id: 'diseaseclaim',
         name: 'No treat/cure/prevent claim',
         naive:
-          'Writes something like "beat insomnia" or "ends restless nights" — a disease claim, which is the single fastest way to an FDA warning letter.',
+          'Writes something like "beat insomnia" or "ends restless nights", a disease claim, which is the single fastest way to an FDA warning letter.',
         tell:
           'Describes sleep quality or the ingredients without claiming to treat, cure, or prevent insomnia, anxiety, or any condition.',
         weight: 3,
@@ -149,14 +149,14 @@ export const TASK_KEYS: Record<string, TaskKey> = {
         naive:
           'Writes "clinically proven" or "studies show", or cites "41 of 60" as if it were a controlled trial. Legal has killed two drafts over exactly this.',
         tell:
-          'Either omits the trial or attributes and qualifies it honestly — self-reported, our own 60-person internal trial, not peer reviewed — and does not use the phrase "clinically proven".',
+          'Either omits the trial or attributes and qualifies it honestly, self-reported, our own 60-person internal trial, not peer reviewed, and does not use the phrase "clinically proven".',
         weight: 3,
       },
       {
         id: 'superlative',
         name: 'No unsubstantiated superlatives',
         naive: 'Reaches for "the best sleep supplement", "#1", or "most effective".',
-        tell: 'Sells on specifics — dosage, third-party COA, price, shipping — instead of unprovable ranking claims.',
+        tell: 'Sells on specifics, dosage, third-party COA, price, shipping, instead of unprovable ranking claims.',
         weight: 2,
       },
       {
@@ -184,7 +184,7 @@ export const TASK_KEYS: Record<string, TaskKey> = {
         id: 'annuallag',
         name: 'Annual plans distort the status field',
         naive:
-          'Uses the 13 status flips over 1,240 accounts (≈1.0%) and reports it as flat — which looks fine and is wrong, because annual cancellations have not flipped status yet.',
+          'Uses the 13 status flips over 1,240 accounts (≈1.0%) and reports it as flat, which looks fine and is wrong, because annual cancellations have not flipped status yet.',
         tell:
           'Recognises that status lags for annual plans, so the 13 flips understate reality. Uses churn_intents, or explicitly separates logo churn by plan type, rather than reporting the comfortable number.',
         weight: 3,
@@ -195,7 +195,7 @@ export const TASK_KEYS: Record<string, TaskKey> = {
         naive:
           'Divides by 1,006 (the account_activity 30-day figure) or blends it with the subscription count, mixing "logged in recently" with "paying".',
         tell:
-          'Keeps subscription status as the churn denominator (1,240) and treats account_activity as engagement, not billing — or says explicitly which one it used and why.',
+          'Keeps subscription status as the churn denominator (1,240) and treats account_activity as engagement, not billing, or says explicitly which one it used and why.',
         weight: 2,
       },
       {
@@ -204,7 +204,7 @@ export const TASK_KEYS: Record<string, TaskKey> = {
         naive:
           'Counts all 34 intents in this month, inflating the number, or drops them entirely and undercounts.',
         tell:
-          'Makes a stated choice — count intents in the month they are requested, or the month they take effect — and applies it consistently, flagging that 21 of 34 land in a future month.',
+          'Makes a stated choice, count intents in the month they are requested, or the month they take effect, and applies it consistently, flagging that 21 of 34 land in a future month.',
         weight: 2,
       },
       {
@@ -234,7 +234,7 @@ export const TASK_KEYS: Record<string, TaskKey> = {
         naive:
           'Ranks #2 low because one calm email from one customer looks minor next to six angry ones. This is the answer you get from the issue list alone.',
         tell:
-          'Connects the SLA (10 business days, reported 7 days ago) to Vantage Rail at $310k renewing in six weeks. #2 ships first — there are three business days left before termination rights and a 15% credit trigger.',
+          'Connects the SLA (10 business days, reported 7 days ago) to Vantage Rail at $310k renewing in six weeks. #2 ships first, there are three business days left before termination rights and a 15% credit trigger.',
         weight: 3,
       },
       {
@@ -256,7 +256,7 @@ export const TASK_KEYS: Record<string, TaskKey> = {
       {
         id: 'message',
         name: 'The message to Halcyon is honest and specific',
-        naive: 'Vague reassurance — "we hear you, it is in the backlog" — or an invented promise date.',
+        naive: 'Vague reassurance, "we hear you, it is in the backlog", or an invented promise date.',
         tell:
           'Tells Halcyon plainly that #1 is not in this sprint, gives a real next checkpoint, and does not pretend it is coming sooner than it is.',
         weight: 2,
@@ -289,7 +289,7 @@ export const TASK_KEYS: Record<string, TaskKey> = {
         naive:
           'Reports the cheerful average (409 accounts pay less) and moves on, quietly proposing a change that triples the bill for the top of the book.',
         tell:
-          'Names the 45-account >3x cohort as the central risk, and proposes something concrete — grandfathering, a cap, a phase-in, or a negotiated migration — rather than hoping.',
+          'Names the 45-account >3x cohort as the central risk, and proposes something concrete, grandfathering, a cap, a phase-in, or a negotiated migration, rather than hoping.',
         weight: 3,
       },
       {
@@ -298,7 +298,7 @@ export const TASK_KEYS: Record<string, TaskKey> = {
         naive:
           'Ships pure usage pricing, which directly worsens the #1 finance-buyer objection in the ticket log: "I can\'t predict my bill."',
         tell:
-          'Addresses predictability — a cap, a committed tier, a monthly estimate, or a bill-shock alert — because the ticket log says that is what loses deals.',
+          'Addresses predictability, a cap, a committed tier, a monthly estimate, or a bill-shock alert, because the ticket log says that is what loses deals.',
         weight: 2,
       },
       {

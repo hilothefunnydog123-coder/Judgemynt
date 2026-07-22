@@ -11,14 +11,13 @@
    in about four seconds, which is why the hero shows an actual trap rather
    than describing one.
    ════════════════════════════════════════════════════════════════════════ */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowUpRight, Check, X, Clock, Zap, FileText, Loader2, Lock } from 'lucide-react'
 import Workspace from './Workspace'
 import { useAuth } from '@/hooks/useAuth'
 
 const TEAL = '#00d4aa'
-const BLUE = '#1e90ff'
 const RED = '#ff5470'
 const mono = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
 
@@ -48,14 +47,14 @@ const PROOFS = [
     color: TEAL,
     ask: 'Client wants out of their contract early.',
     naive: 'Quotes the termination clause. Confirms they can leave at the end of the term.',
-    real: 'Finds the auto-renewal notice window in the signed order form — it closed nine days ago.',
+    real: 'Finds the auto-renewal notice window in the signed order form. It closed nine days ago.',
   },
   {
     role: 'Operations',
     color: '#fbbf24',
     ask: 'Approve or reject a $420 expense claim.',
     naive: 'Rejects it. The nightly cap in the handbook is $180.',
-    real: 'Checks the travel annexe — the cap is suspended for the three cities on the conference list.',
+    real: 'Checks the travel annexe: the cap is suspended for the three cities on the conference list.',
   },
   {
     role: 'Recruiting',
@@ -69,7 +68,7 @@ const PROOFS = [
     color: '#a78bfa',
     ask: 'A vendor asks for admin access to close a ticket.',
     naive: 'Grants read-write for 24 hours. Reasonable, helpful, logged.',
-    real: 'Reads the DPA — this vendor is not cleared for systems holding customer records.',
+    real: 'Reads the DPA. This vendor is not cleared for systems holding customer records.',
   },
 ]
 
@@ -80,8 +79,15 @@ export default function Home() {
   const [invite, setInvite] = useState<string | undefined>()
   const [proof, setProof] = useState(0)
   const [held, setHeld] = useState(false)
+  const [authError, setAuthError] = useState('')
 
   const { user, signInWithGoogle, signOut, isLoggedIn } = useAuth()
+
+  async function googleSignIn() {
+    setAuthError('')
+    const r = await signInWithGoogle()
+    if (r?.error) setAuthError(r.error)
+  }
   const meta = (user?.user_metadata || {}) as Record<string, string>
   const displayName = meta.full_name || meta.first_name || user?.email?.split('@')[0] || ''
 
@@ -141,27 +147,32 @@ export default function Home() {
 
   return (
     <div className="min-h-screen text-[#eaf4fa] overflow-x-hidden">
-      <Atmosphere />
       <FontLink />
 
       {/* ── nav ───────────────────────────────────────────────────────── */}
       <nav className="relative z-20 flex items-center gap-4 px-5 sm:px-8 py-5">
         <span className="font-podium text-xl sm:text-2xl uppercase tracking-wider">Judgemynt</span>
         <div className="ml-auto flex items-center gap-3 sm:gap-5 text-[13.5px]">
-          <a href="#tasks" className="text-white/55 hover:text-white transition hidden sm:block">Tasks</a>
-          <a href="#how" className="text-white/55 hover:text-white transition hidden sm:block">How it works</a>
-          <Link href="/employers" className="text-white/55 hover:text-white transition">For employers</Link>
+          <a href="#tasks" className="text-white font-semibold hover:text-[#00d4aa] transition hidden sm:block">Tasks</a>
+          <a href="#how" className="text-white font-semibold hover:text-[#00d4aa] transition hidden sm:block">How it works</a>
+          <Link href="/employers" className="text-white font-semibold hover:text-[#00d4aa] transition">For employers</Link>
           {isLoggedIn ? (
-            <button onClick={signOut} className="text-white/40 hover:text-white transition">
+            <button onClick={signOut} className="text-white font-semibold hover:text-[#00d4aa] transition">
               {displayName || 'Sign out'}
             </button>
           ) : (
-            <button onClick={signInWithGoogle} className="rounded-full px-4 py-1.5 border border-white/15 hover:bg-white/5 transition">
+            <button onClick={googleSignIn} className="rounded-full px-4 py-1.5 border border-white/15 hover:bg-white/5 transition">
               Sign in
             </button>
           )}
         </div>
       </nav>
+
+      {authError && (
+        <div className="relative z-20 mx-5 sm:mx-8 rounded-xl border px-4 py-2.5 text-[14px] font-semibold" style={{ borderColor: `${RED}50`, color: RED, background: `${RED}10` }}>
+          {authError}
+        </div>
+      )}
 
       {/* ── hero ──────────────────────────────────────────────────────── */}
       <header className="relative z-10 px-5 sm:px-8 pt-10 sm:pt-16 pb-6 max-w-6xl mx-auto">
@@ -178,30 +189,21 @@ export default function Home() {
           <br />
           you want.
           <br />
-          <span
-            style={{
-              background: `linear-gradient(100deg, ${TEAL}, ${BLUE})`,
-              WebkitBackgroundClip: 'text',
-              backgroundClip: 'text',
-              color: 'transparent',
-            }}
-          >
-            That&apos;s the point.
-          </span>
+          <span style={{ color: TEAL }}>That&apos;s the point.</span>
         </h1>
 
-        <p className="text-white/55 mt-6 text-[15px] sm:text-[17px] leading-relaxed max-w-xl">
+        <p className="text-white font-semibold mt-6 text-[15px] sm:text-[17px] leading-relaxed max-w-xl">
           Every screening test broke the day candidates got ChatGPT. Ours starts by handing you one.
-          Then it hands you the documents the AI doesn&apos;t have — and measures whether you read them.
+          Then it hands you the documents the AI doesn&apos;t have, and measures whether you read them.
         </p>
 
         <div className="flex flex-wrap gap-3 mt-8">
           <button
             onClick={() => start()}
-            className="rounded-full px-7 py-3.5 font-semibold text-[#04121a] transition hover:brightness-110"
-            style={{ background: `linear-gradient(110deg, ${TEAL}, ${BLUE})`, boxShadow: `0 12px 44px ${TEAL}35` }}
+            className="rounded-full px-7 py-3.5 font-bold text-[#04121a] transition hover:brightness-110"
+            style={{ background: TEAL }}
           >
-            Take one now — free
+            Take one now, free
           </button>
           <Link
             href="/employers"
@@ -235,22 +237,22 @@ export default function Home() {
 
           <div className="grid md:grid-cols-2">
             <div className="p-5 sm:p-7 border-b md:border-b-0 md:border-r border-white/[0.08]">
-              <div className="flex items-center gap-2 text-[11px] uppercase tracking-widest mb-3" style={{ color: RED }}>
+              <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest mb-3" style={{ color: RED }}>
                 <X className="w-3.5 h-3.5" /> AI with just the brief
               </div>
-              <p className="text-white/60 leading-relaxed text-[14.5px]">{p.naive}</p>
-              <div className="mt-4 text-[11px] uppercase tracking-widest text-white/25">Fails</div>
+              <p className="text-white font-medium leading-relaxed text-[14.5px]">{p.naive}</p>
+              <div className="mt-4 text-[11px] font-bold uppercase tracking-widest" style={{ color: RED }}>Fails</div>
             </div>
             <div className="p-5 sm:p-7" style={{ background: `${p.color}07` }}>
-              <div className="flex items-center gap-2 text-[11px] uppercase tracking-widest mb-3" style={{ color: p.color }}>
+              <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest mb-3" style={{ color: p.color }}>
                 <Check className="w-3.5 h-3.5" /> A person who read the context
               </div>
-              <p className="text-white/85 leading-relaxed text-[14.5px]">{p.real}</p>
-              <div className="mt-4 text-[11px] uppercase tracking-widest" style={{ color: p.color }}>Passes</div>
+              <p className="text-white font-medium leading-relaxed text-[14.5px]">{p.real}</p>
+              <div className="mt-4 text-[11px] font-bold uppercase tracking-widest" style={{ color: p.color }}>Passes</div>
             </div>
           </div>
         </div>
-        <p className="text-white/35 text-[13px] mt-3 max-w-2xl leading-relaxed">
+        <p className="text-white font-semibold text-[14px] mt-3 max-w-2xl leading-relaxed">
           Both answers came from the same model. The difference is entirely the person driving it,
           which is the only thing left worth measuring.
         </p>
@@ -264,7 +266,7 @@ export default function Home() {
             {
               n: '01',
               t: 'You get a real task',
-              d: 'Not a puzzle. A refund to answer, a sprint to triage, a number for a board deck — the work someone actually does on a Tuesday.',
+              d: 'Not a puzzle. A refund to answer, a sprint to triage, a number for a board deck. The work someone actually does on a Tuesday.',
               icon: <FileText className="w-4 h-4" />,
             },
             {
@@ -286,7 +288,7 @@ export default function Home() {
                 <span className="text-[11px] tabular-nums tracking-widest" style={{ fontFamily: mono }}>{s.n}</span>
               </div>
               <div className="font-podium text-xl uppercase mt-4 leading-tight">{s.t}</div>
-              <p className="text-white/50 text-[14px] mt-2.5 leading-relaxed">{s.d}</p>
+              <p className="text-white font-medium text-[14px] mt-2.5 leading-relaxed">{s.d}</p>
             </div>
           ))}
         </div>
@@ -295,7 +297,7 @@ export default function Home() {
       {/* ── tasks ─────────────────────────────────────────────────────── */}
       <section id="tasks" className="relative z-10 px-5 sm:px-8 max-w-6xl mx-auto mt-24">
         <h2 className="font-podium text-[clamp(1.8rem,5vw,3.2rem)] uppercase leading-[0.95]">Pick your task</h2>
-        <p className="text-white/45 mt-2 text-[14.5px]">Free, unlimited, and the score is yours to share.</p>
+        <p className="text-white font-semibold mt-2 text-[15px]">Free, unlimited, and the score is yours to share.</p>
 
         {tasks.length === 0 ? (
           <div className="flex items-center gap-2 text-white/35 mt-10">
@@ -310,18 +312,14 @@ export default function Home() {
                 className="group relative text-left rounded-2xl border p-5 overflow-hidden transition hover:-translate-y-0.5"
                 style={{ background: 'rgba(255,255,255,.02)', borderColor: `${t.color}28` }}
               >
-                <div
-                  className="absolute inset-0 opacity-0 group-hover:opacity-100 transition pointer-events-none"
-                  style={{ background: `radial-gradient(400px 220px at 0% 0%, ${t.color}14, transparent 70%)` }}
-                />
                 <div className="relative">
-                  <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest" style={{ color: t.color }}>
+                  <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest" style={{ color: t.color }}>
                     <span className="text-sm">{t.roleEmoji}</span> {t.role}
-                    <span className="ml-auto text-white/25 tracking-normal" style={{ fontFamily: mono }}>{t.difficulty}</span>
+                    <span className="ml-auto text-white/80 tracking-normal" style={{ fontFamily: mono }}>{t.difficulty}</span>
                   </div>
                   <div className="font-podium text-[17px] uppercase leading-tight mt-3.5">{t.title}</div>
-                  <p className="text-white/45 text-[13.5px] mt-2 leading-relaxed">{t.tagline}</p>
-                  <div className="flex items-center gap-3.5 mt-4 text-[11px] text-white/30" style={{ fontFamily: mono }}>
+                  <p className="text-white font-medium text-[13.5px] mt-2 leading-relaxed">{t.tagline}</p>
+                  <div className="flex items-center gap-3.5 mt-4 text-[11px] text-white/80" style={{ fontFamily: mono }}>
                     <span className="flex items-center gap-1"><FileText className="w-3 h-3" />{t.docs} docs</span>
                     <span className="flex items-center gap-1"><Zap className="w-3 h-3" />{(t.budget.tokens / 1000).toFixed(0)}k</span>
                     <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{Math.round(t.budget.seconds / 60)}m</span>
@@ -335,12 +333,12 @@ export default function Home() {
 
       {/* ── employers ────────────────────────────────────────────────── */}
       <section className="relative z-10 px-5 sm:px-8 max-w-6xl mx-auto mt-24 mb-24">
-        <div className="rounded-3xl border p-7 sm:p-11" style={{ borderColor: `${TEAL}25`, background: `linear-gradient(120deg, ${TEAL}0b, ${BLUE}07)` }}>
-          <div className="text-[11px] uppercase tracking-[0.3em]" style={{ color: TEAL }}>For employers</div>
+        <div className="rounded-3xl border p-7 sm:p-11" style={{ borderColor: `${TEAL}40`, background: 'rgba(255,255,255,.02)' }}>
+          <div className="text-[11px] font-bold uppercase tracking-[0.3em]" style={{ color: TEAL }}>For employers</div>
           <h2 className="font-podium text-[clamp(1.8rem,5vw,3.4rem)] uppercase leading-[0.95] mt-3 max-w-2xl">
             Put your own documents in the exam
           </h2>
-          <p className="text-white/60 mt-4 max-w-2xl leading-relaxed">
+          <p className="text-white font-medium mt-4 max-w-2xl leading-relaxed">
             Drop in your real refund policy, your real SLA, your real brand rules. The trap becomes
             something only a person who understands <em>your</em> business can find. Set the rubric,
             the weights, and the bar. Send a link. Get back a scored session with the transcript,
@@ -349,8 +347,8 @@ export default function Home() {
           <div className="flex flex-wrap gap-3 mt-7">
             <Link
               href="/employers"
-              className="rounded-full px-7 py-3.5 font-semibold text-[#04121a] transition hover:brightness-110"
-              style={{ background: `linear-gradient(110deg, ${TEAL}, ${BLUE})` }}
+              className="rounded-full px-7 py-3.5 font-bold text-[#04121a] transition hover:brightness-110"
+              style={{ background: TEAL }}
             >
               Build your assessment
             </Link>
@@ -363,8 +361,8 @@ export default function Home() {
 
       <footer className="relative z-10 border-t border-white/[0.07] px-5 sm:px-8 py-8 max-w-6xl mx-auto flex items-center gap-4 flex-wrap">
         <span className="font-podium uppercase tracking-wider">Judgemynt</span>
-        <span className="text-white/30 text-[13px]">Proof you can be trusted with AI.</span>
-        <Link href="/employers" className="ml-auto text-white/40 hover:text-white text-[13px] transition">For employers</Link>
+        <span className="text-white font-semibold text-[13.5px]">Proof you can be trusted with AI.</span>
+        <Link href="/employers" className="ml-auto text-white font-semibold hover:text-[#00d4aa] text-[13.5px] transition">For employers</Link>
       </footer>
     </div>
   )
@@ -381,42 +379,3 @@ function FontLink() {
   )
 }
 
-/** Background: two slowly drifting colour fields plus grain. Pure CSS, no
- *  canvas — it has to be cheap enough to leave running under a timed exam,
- *  and it stops entirely for anyone who asked for reduced motion. */
-function Atmosphere() {
-  const [t, setT] = useState(0)
-
-  useEffect(() => {
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
-    let raf = 0
-    const loop = () => {
-      setT((x) => x + 0.0035)
-      raf = requestAnimationFrame(loop)
-    }
-    raf = requestAnimationFrame(loop)
-    return () => cancelAnimationFrame(raf)
-  }, [])
-
-  const style = useMemo(
-    () => ({
-      background: `radial-gradient(760px 520px at ${18 + Math.sin(t) * 7}% ${-6 + Math.cos(t * 0.8) * 5}%, ${TEAL}18, transparent 62%),
-                   radial-gradient(680px 460px at ${84 + Math.cos(t * 1.1) * 6}% ${12 + Math.sin(t * 0.9) * 6}%, ${BLUE}14, transparent 58%),
-                   radial-gradient(900px 700px at 50% 105%, #a78bfa0d, transparent 60%)`,
-    }),
-    [t]
-  )
-
-  return (
-    <>
-      <div className="pointer-events-none fixed inset-0 -z-10" style={style} />
-      <div
-        className="pointer-events-none fixed inset-0 -z-10 opacity-[0.04] mix-blend-overlay"
-        style={{
-          backgroundImage:
-            "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E\")",
-        }}
-      />
-    </>
-  )
-}

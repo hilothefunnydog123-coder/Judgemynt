@@ -168,7 +168,7 @@ export function roleProblems(role: Omit<Role, 'id' | 'created_at'>): string[] {
   const out: string[] = []
   if (role.kind === 'custom') {
     if (!role.brief || role.brief.trim().length < 40)
-      out.push('A custom role needs a brief of at least 40 characters — this is what the candidate is asked to do.')
+      out.push('A custom role needs a brief of at least 40 characters. This is what the candidate is asked to do.')
     if (!role.deliverable) out.push('Say what the candidate must hand in, or grading has nothing to check.')
     if (!role.requirements.length)
       out.push('Add at least one requirement, otherwise the examiner has no objective bar for Quality.')

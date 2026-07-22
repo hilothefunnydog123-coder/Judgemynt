@@ -62,6 +62,13 @@ npm run dev
 
 Only `GEMINI_API_KEY` is required — without it the workspace renders but cannot grade. Supabase (accounts, roles, results) and Resend (the employer contact form) are optional and degrade to disabled rather than erroring, so the app builds and runs for anyone who clones it.
 
+Google sign-in runs through Supabase Auth (PKCE flow). One-time setup: create an
+OAuth 2.0 Web client in Google Cloud Console with the redirect URI
+`https://<project-ref>.supabase.co/auth/v1/callback`, enable the Google provider
+in the Supabase dashboard with that client's ID and secret, and set your Site URL
+(plus `http://localhost:3000` for dev) under Authentication, URL Configuration.
+No extra env vars are needed beyond the Supabase keys.
+
 For the employer side, run `supabase-judgemynt.sql` in the Supabase SQL editor. Both tables have RLS on with no policies on purpose: every read and write goes through the server with the service role, so a candidate holding the anon key can't enumerate results and a company can't read another company's roles.
 
 ## Layout

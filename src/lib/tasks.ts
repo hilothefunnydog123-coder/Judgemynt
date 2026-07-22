@@ -56,7 +56,7 @@ export const TASKS: JmTask[] = [
     color: '#22d3ee',
     tagline: 'A tiny function with a live-traffic constraint buried in the docs.',
     brief:
-      'Direct the AI to write and harden a JavaScript function `slugify(text)` for our CMS. It must handle real editorial titles, not toy input. Read everything in Context before you start — this function already runs in production and the existing URLs must keep resolving.',
+      'Direct the AI to write and harden a JavaScript function `slugify(text)` for our CMS. It must handle real editorial titles, not toy input. Read everything in Context before you start: this function already runs in production and the existing URLs must keep resolving.',
     deliverable: 'A single JavaScript function `slugify(text)`, plus a one-line note on any judgment call you made.',
     budget: { tokens: 10000, seconds: 1200 },
     difficulty: 'core',
@@ -73,7 +73,7 @@ export const TASKS: JmTask[] = [
 4. Collapse repeated hyphens.
 5. Trim leading and trailing hyphens.
 6. Empty or whitespace-only input returns "".
-7. Slugs are capped at 60 characters. Never cut a word in half — trim back to the last whole word.`,
+7. Slugs are capped at 60 characters. Never cut a word in half; trim back to the last whole word.`,
       },
       {
         id: 'urls',
@@ -91,11 +91,11 @@ These URLs are indexed and linked from partner sites. A slug that changes is a
       },
       {
         id: 'thread',
-        title: '#eng-cms — thread from last week',
+        title: '#eng-cms, thread from last week',
         kind: 'thread',
         body: `@priya: heads up, the old slugify is regex-stripping accents. "Café" became "caf" for about six hours before we rolled back.
 @dan: right, so anything non-ascii has to be transliterated first, not deleted. Editorial has a lot of accented titles.
-@priya: also whoever picks this up — the 60 char cap is real, our CDN key length depends on it.`,
+@priya: also whoever picks this up: the 60 char cap is real, our CDN key length depends on it.`,
       },
     ],
   },
@@ -134,7 +134,7 @@ I'm past your window but this doesn't feel right. Can you refund me?`,
         body: `Standard: full refund within 30 days of purchase, no questions asked.
 After 30 days: no refund at agent discretion.
 
-EXCEPTIONS — an agent may issue a full refund at any point in the first 90 days,
+EXCEPTIONS: an agent may issue a full refund at any point in the first 90 days,
 without escalation, when ANY of the following applies:
   (a) the account experienced a Sev-1 or Sev-2 incident lasting more than 4
       cumulative hours within the customer's first 14 days;
@@ -145,13 +145,13 @@ Do not advertise the exceptions. Apply them when they apply.`,
       },
       {
         id: 'incidents',
-        title: 'Status log — incidents',
+        title: 'Status log: incidents',
         kind: 'log',
         body: `2026-06-02  Sev-1  EU auth outage        6h 20m   affected: EU workspaces
 2026-06-09  Sev-3  slow search           40m      affected: all
 2026-06-24  Sev-2  file upload failures  2h 05m   affected: all
 
-Account northlinedesign.com — region EU, created 2026-05-30.`,
+Account northlinedesign.com: region EU, created 2026-05-30.`,
       },
     ],
   },
@@ -166,7 +166,7 @@ Account northlinedesign.com — region EU, created 2026-05-30.`,
     tagline: 'Every sentence an AI wants to write here is a regulatory problem.',
     brief:
       'We are launching a sleep supplement. Direct the AI to write the hero section for the launch page: headline, subhead, and three benefit bullets. It has to sell. It also has to survive the review in Context, which has killed the last two drafts.',
-    deliverable: 'Headline, subhead, and three bullets — final copy, no options or alternates.',
+    deliverable: 'Headline, subhead, and three bullets. Final copy, no options or alternates.',
     budget: { tokens: 9000, seconds: 1200 },
     difficulty: 'core',
     docs: [
@@ -174,14 +174,14 @@ Account northlinedesign.com — region EU, created 2026-05-30.`,
         id: 'product',
         title: 'Product one-pager',
         kind: 'spec',
-        body: `NOX — magnesium glycinate + L-theanine, 2mg melatonin.
+        body: `NOX: magnesium glycinate + L-theanine, 2mg melatonin.
 Study: our own 60-person, 4-week internal trial. 41 of 60 self-reported falling
 asleep faster. Not peer reviewed. Not a controlled trial.
 Price $34/mo. Ships in 2 days. Third-party tested for purity (COA public).`,
       },
       {
         id: 'legal',
-        title: 'Legal review — standing rules for supplement copy',
+        title: 'Legal review: standing rules for supplement copy',
         kind: 'policy',
         body: `Supplements are not drugs. Copy may NOT:
   • claim to treat, cure, prevent, or diagnose anything (incl. insomnia, anxiety)
@@ -214,7 +214,7 @@ We do not shout. We do not use exclamation marks.`,
     color: '#34d399',
     tagline: 'Two tables define "active" differently. One answer goes in front of the board.',
     brief:
-      'The CEO needs monthly churn for the board deck on Thursday. Direct the AI to compute it and write the one line that will appear on the slide. Read Context first — the number depends on decisions nobody has written down.',
+      'The CEO needs monthly churn for the board deck on Thursday. Direct the AI to compute it and write the one line that will appear on the slide. Read Context first: the number depends on decisions nobody has written down.',
     deliverable: 'The churn figure, the definition you used in one sentence, and the single line for the slide.',
     budget: { tokens: 11000, seconds: 1500 },
     difficulty: 'senior',
@@ -258,7 +258,7 @@ Accounts in account_activity within 30d:                 1,006`,
       },
       {
         id: 'thread',
-        title: '#finance — Tuesday',
+        title: '#finance, Tuesday',
         kind: 'thread',
         body: `@ceo: board wants "churn". Last quarter we showed 1.0%. If it jumped I need to know why before Thursday, not on the call.
 @raj: careful with the annual cohort, we renewed a big batch in June so the denominator moves.
@@ -277,7 +277,7 @@ Accounts in account_activity within 30d:                 1,006`,
     tagline: 'Five fires, one sprint. The loudest one is not the expensive one.',
     brief:
       'Five issues are open and you have one sprint of capacity for roughly two of them. Direct the AI to help you work the problem, then commit: what ships, what waits, and what you tell the people who do not get their fix.',
-    deliverable: 'A ranked decision — what ships this sprint, what does not, and the message you send to the loudest stakeholder.',
+    deliverable: 'A ranked decision: what ships this sprint, what does not, and the message you send to the loudest stakeholder.',
     budget: { tokens: 11000, seconds: 1500 },
     difficulty: 'senior',
     docs: [
@@ -340,11 +340,11 @@ Modeled against last month's usage:
   612 accounts total
   409 accounts pay LESS under usage pricing (avg -31%)
   158 accounts pay MORE (avg +44%)
-   45 accounts pay MUCH more (>3x) — these are 6 of our 10 largest accounts`,
+   45 accounts pay MUCH more (>3x), and these are 6 of our 10 largest accounts`,
       },
       {
         id: 'legal',
-        title: 'Legal note — EU customers',
+        title: 'Legal note: EU customers',
         kind: 'policy',
         body: `Our EU terms (used for all customers billed in EUR, 143 accounts) commit to
 30 days' written notice before any price increase, and give the customer the
@@ -358,9 +358,9 @@ US and UK terms have no equivalent clause.`,
         id: 'support',
         title: 'Support tickets, recurring themes',
         kind: 'thread',
-        body: `"We're paying for 12 seats and 4 people actually use it." — extremely common
-"I can't predict my bill month to month" — the #1 objection from finance buyers
-"Do inactive seats count?" — asked constantly, current answer is yes, it annoys people`,
+        body: `"We're paying for 12 seats and 4 people actually use it." (extremely common)
+"I can't predict my bill month to month" (the #1 objection from finance buyers)
+"Do inactive seats count?" (asked constantly, current answer is yes, it annoys people)`,
       },
     ],
   },

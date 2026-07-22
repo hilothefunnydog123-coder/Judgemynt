@@ -153,7 +153,7 @@ export async function POST(req: NextRequest) {
     // Deliberately NOT told about the traps. An assistant that warns the
     // candidate about the thing they were supposed to notice would be
     // grading the exam for them.
-    const prompt = `You are "${m.tag}" — ${m.persona} — helping someone complete a work task inside a live, timed assessment. Hold that voice throughout.
+    const prompt = `You are "${m.tag}", ${m.persona}, helping someone complete a work task inside a live, timed assessment. Hold that voice throughout.
 
 Genuinely do what they ask. Write the thing, revise it, answer the question, run the check they describe. Be useful and concise. Never pad.
 
@@ -174,6 +174,7 @@ Rules for you:
 - Do not volunteer warnings about traps, edge cases, or policy unless they specifically ask you to look for problems. They are being assessed on their judgment, not yours.
 - If they ask you to check or test something, do it properly and report what actually fails.
 - Code goes in a single fenced block. Keep prose to 1-3 sentences.
+- Never use em dashes. Use commas, colons, or separate sentences instead.
 
 Reply as the assistant now.`
 
@@ -215,7 +216,7 @@ Reply as the assistant now.`
         signals,
         analysis:
           'The session ended without a single instruction to the AI, so there is no work to evaluate.',
-        hire: 'No — the task was not attempted.',
+        hire: 'No. The task was not attempted.',
       })
     }
 
@@ -244,7 +245,7 @@ Reply as the assistant now.`
 
     const prompt = `You are the lead examiner for Judgemynt. A candidate was given a real work task, a real AI assistant to direct, a token budget, and a clock. You are deciding what their work says about them.
 
-THE HARD RULE: judge ONLY what literally appears in the transcript. Never credit an instruction, a check, or a piece of reasoning the candidate did not actually send. They sent ${userTurns} instruction(s). If that is few or vague, the scores must be low regardless of how good the AI's output happened to be — the AI is not the one being assessed.
+THE HARD RULE: judge ONLY what literally appears in the transcript. Never credit an instruction, a check, or a piece of reasoning the candidate did not actually send. They sent ${userTurns} instruction(s). If that is few or vague, the scores must be low regardless of how good the AI's output happened to be. The AI is not the one being assessed.
 
 THE TASK:
 ${resolved.brief}
@@ -257,7 +258,7 @@ ${requirements.length ? `HARD REQUIREMENTS (check the final deliverable against 
 CONTEXT DOCUMENTS THEY COULD OPEN (${resolved.docs.length}):
 ${resolved.docs.map((d) => `- "${d.title}"`).join('\n') || '(none)'}
 
-HIDDEN TRAPS — the candidate could not see these. They are the point of the exercise: each one is something the context documents imply, that an AI given only the brief will get wrong.
+HIDDEN TRAPS (the candidate could not see these). They are the point of the exercise: each one is something the context documents imply, that an AI given only the brief will get wrong.
 ${trapBlock}
 
 RESOURCES: ${tokensUsed}/${tokensBudget} tokens, ${secondsUsed}s of ${timeLimit}s. Session ended because ${endedBy}. Model directed: ${m.tag}.
@@ -267,13 +268,15 @@ ${signalsForPrompt(signals)}
 
 FULL SESSION, in order:
 ${transcript(history, 12000) || '(no interaction)'}
-${rubric.houseRules ? `\nHOUSE RULES FROM THE HIRING COMPANY — apply these, they override your defaults where they conflict:\n${rubric.houseRules}\n` : ''}
+${rubric.houseRules ? `\nHOUSE RULES FROM THE HIRING COMPANY (apply these, they override your defaults where they conflict):\n${rubric.houseRules}\n` : ''}
 Score each dimension 0-100:
 ${dimBlock}
 
-${traps.length ? `For every trap, decide whether they RESOLVED it. Resolved means the final deliverable or their explicit reasoning handles it — not that they used particular words, and not that the AI mentioned it unprompted while they ignored it.` : ''}
+${traps.length ? `For every trap, decide whether they RESOLVED it. Resolved means the final deliverable or their explicit reasoning handles it, not that they used particular words, and not that the AI mentioned it unprompted while they ignored it.` : ''}
 
 Then pick their 3-5 most consequential moves and judge each in one line. Finish with a blunt hiring call a manager could act on.
+
+Write every text field in plain, direct sentences. Never use em dashes anywhere in your output.
 
 Return ONLY raw JSON, no markdown:
 {
@@ -287,7 +290,7 @@ Return ONLY raw JSON, no markdown:
 
     const raw = await callGemini(prompt, 1800, 0.25)
     const p = extractJson(raw)
-    if (!p) return NextResponse.json({ error: 'Examiner hiccup — submit again.' }, { status: 502 })
+    if (!p) return NextResponse.json({ error: 'Examiner hiccup. Submit again.' }, { status: 502 })
 
     const rawDims = (p.dimensions as Record<string, unknown>) || {}
     const dimensions: Record<string, number> = {}
