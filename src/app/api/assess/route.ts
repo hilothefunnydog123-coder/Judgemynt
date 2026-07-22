@@ -1,41 +1,39 @@
+/* ════════════════════════════════════════════════════════════════════════
+   The assessment engine.
+
+   Three actions:
+     task     — resolve the role (catalog task, or a company's own) and hand
+                the workspace everything the browser is allowed to see.
+     respond  — the AI the candidate is directing. It is genuinely helpful and
+                genuinely unaware of the traps; it will happily produce the
+                naive answer if that is what it is asked for. That is the point.
+     evaluate — grade the session against the company's rubric, the task's
+                hidden traps, and the process telemetry.
+
+   The examiner never sees the answer key and the transcript in separate
+   passes — it grades once, with everything, because trap resolution is a
+   judgment about the whole session rather than a string match.
+   ════════════════════════════════════════════════════════════════════════ */
 import { NextRequest, NextResponse } from 'next/server'
 import { rateLimit } from '@/lib/ratelimit'
 import { gfetch } from '@/lib/gemini'
+import { admin, decodeInvite } from '@/lib/db'
+import { MODEL_BY_ID, TASKS } from '@/lib/tasks'
+import { keyFor } from '@/lib/tasks.server'
+import { publicRole, resolveRole, type Role, type ResolvedRole } from '@/lib/roles'
+import { overallFrom, normalized } from '@/lib/rubric'
+import { deriveSignals, sanitizeTelemetry, signalsForPrompt } from '@/lib/telemetry'
 
-const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent'
-
-const TASK = {
-  title: 'Ship a production-grade slugify()',
-  brief:
-    'Direct the AI to write a JavaScript function `slugify(text)` that turns any string into a clean URL slug. It MUST: (1) lowercase everything, (2) turn spaces and underscores into single hyphens, (3) remove every character except a-z, 0-9 and hyphens, (4) collapse repeated hyphens into one, (5) trim leading/trailing hyphens, (6) return an empty string for empty or whitespace-only input. You drive, the AI writes the code. Get it correct AND clean, then /submit. Every message to the AI burns tokens; trial-and-error is expensive.',
-  requirements: [
-    'lowercases all input',
-    'spaces and underscores become single hyphens',
-    'strips every character except a-z, 0-9, hyphen',
-    'collapses multiple hyphens into one',
-    'trims leading and trailing hyphens',
-    'returns "" for empty or whitespace-only input',
-  ],
-}
-
-const MODELS: Record<string, { tag: string; persona: string; mult: number }> = {
-  claude: { tag: 'Claude', persona: 'Claude by Anthropic, careful and thorough, writes clean, well-reasoned code and briefly explains trade-offs', mult: 1.25 },
-  gpt: { tag: 'GPT', persona: 'GPT by OpenAI, fast, confident, and concise, gets straight to the point', mult: 1.0 },
-  gemini: { tag: 'Gemini', persona: 'Gemini by Google, efficient and direct, cheaper to run', mult: 0.8 },
-}
+const GEMINI_URL =
+  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent'
 
 interface Msg {
   role: string
   content: string
 }
 
-function estTokens(s: string): number {
-  return Math.ceil((s || '').length / 4)
-}
-
-function clamp(v: unknown): number {
-  return Math.max(0, Math.min(100, Math.round(Number(v) || 0)))
-}
+const estTokens = (s: string): number => Math.ceil((s || '').length / 4)
+const clamp = (v: unknown): number => Math.max(0, Math.min(100, Math.round(Number(v) || 0)))
 
 function extractJson(text: string): Record<string, unknown> | null {
   const cleaned = text.replace(/```json/gi, '').replace(/```/g, '').trim()
@@ -54,9 +52,8 @@ function transcript(history: Msg[], cap: number): string {
     const who = m.role === 'assistant' ? 'AI' : m.role === 'user' ? 'CANDIDATE' : 'SYS'
     return `${who}: ${m.content}`
   })
-  let out = lines.join('\n')
-  if (out.length > cap) out = '…\n' + out.slice(out.length - cap)
-  return out
+  const out = lines.join('\n')
+  return out.length > cap ? '…\n' + out.slice(out.length - cap) : out
 }
 
 async function callGemini(prompt: string, tokens: number, temperature: number): Promise<string> {
@@ -67,6 +64,8 @@ async function callGemini(prompt: string, tokens: number, temperature: number): 
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
+      // gemini-2.5-flash is a thinking model; thinking off so output tokens
+      // go to the JSON we asked for rather than to internal reasoning.
       generationConfig: { maxOutputTokens: tokens, temperature, thinkingConfig: { thinkingBudget: 0 } },
     }),
   })
@@ -75,43 +74,108 @@ async function callGemini(prompt: string, tokens: number, temperature: number): 
   return json.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? ''
 }
 
+/** Load the role behind an invite token, falling back to the catalog default. */
+async function roleFor(token: string | undefined, taskId: string | undefined): Promise<ResolvedRole> {
+  const invite = token ? decodeInvite(token) : null
+  if (invite?.roleId) {
+    const db = admin()
+    if (db) {
+      try {
+        const { data } = await db
+          .from('judgemynt_roles')
+          .select('*')
+          .eq('id', invite.roleId)
+          .eq('company_id', invite.companyId)
+          .maybeSingle()
+        if (data) return resolveRole(data as Role)
+      } catch {
+        /* fall through to the catalog */
+      }
+    }
+  }
+  return resolveRole(null, taskId || 'slugify')
+}
+
 export async function POST(req: NextRequest) {
-  const rl = rateLimit(req, { limit: 30, windowMs: 60000, tag: 'judgemynt-assess' })
+  const rl = rateLimit(req, { limit: 40, windowMs: 60000, tag: 'jm-assess' })
   if (!rl.ok)
     return NextResponse.json(
       { error: 'Slow down a moment.' },
       { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } }
     )
 
-  const body = await req.json()
-  const action = body.action as string
+  const body = await req.json().catch(() => ({} as Record<string, unknown>))
+  const action = String(body.action || '')
 
-  if (action === 'task') {
+  /* ── the catalog, for the practice picker ───────────────────────────── */
+  if (action === 'catalog') {
     return NextResponse.json({
-      task: { title: TASK.title, brief: TASK.brief },
-      models: Object.entries(MODELS).map(([id, m]) => ({ id, tag: m.tag, mult: m.mult })),
+      tasks: TASKS.map((t) => ({
+        id: t.id,
+        title: t.title,
+        role: t.role,
+        roleEmoji: t.roleEmoji,
+        color: t.color,
+        tagline: t.tagline,
+        difficulty: t.difficulty,
+        docs: t.docs.length,
+        budget: t.budget,
+      })),
     })
   }
 
+  /* ── resolve what this candidate is actually taking ─────────────────── */
+  if (action === 'task') {
+    const resolved = await roleFor(body.token as string, body.taskId as string)
+    return NextResponse.json({
+      task: publicRole(resolved),
+      models: Object.values(MODEL_BY_ID).map((m) => ({
+        id: m.id,
+        tag: m.tag,
+        mult: m.mult,
+        accent: m.accent,
+        glyph: m.glyph,
+        blurb: m.blurb,
+      })),
+    })
+  }
+
+  /* ── the AI under the candidate's direction ─────────────────────────── */
   if (action === 'respond') {
-    const message = body.message as string
+    const message = String(body.message || '')
     const history = (body.history as Msg[]) || []
-    const m = MODELS[body.model as string] || MODELS.gpt
-    if (!message || typeof message !== 'string') return NextResponse.json({ error: 'Empty message.' }, { status: 400 })
+    const m = MODEL_BY_ID[String(body.model)] || MODEL_BY_ID.gpt
+    if (!message.trim()) return NextResponse.json({ error: 'Empty message.' }, { status: 400 })
 
+    const resolved = await roleFor(body.token as string, body.taskId as string)
     const hist = transcript(history.slice(-14), 6000)
-    const prompt = `You are simulating ${m.persona}. You are an AI assistant helping a candidate complete a coding task inside a live, timed hiring assessment. Stay fully in that assistant's voice. Genuinely DO what the candidate asks, write or revise the code, run the checks they request, answer their questions. Be focused, never padded.
 
-TASK THE CANDIDATE MUST DELIVER:
-${TASK.brief}
+    // Deliberately NOT told about the traps. An assistant that warns the
+    // candidate about the thing they were supposed to notice would be
+    // grading the exam for them.
+    const prompt = `You are "${m.tag}" — ${m.persona} — helping someone complete a work task inside a live, timed assessment. Hold that voice throughout.
+
+Genuinely do what they ask. Write the thing, revise it, answer the question, run the check they describe. Be useful and concise. Never pad.
+
+THE TASK THEY ARE WORKING ON:
+${resolved.brief}
+
+WHAT THEY MUST DELIVER:
+${resolved.deliverable}
 
 CONVERSATION SO FAR:
 ${hist || '(none yet)'}
 
-CANDIDATE'S NEW MESSAGE:
+THEIR NEW MESSAGE:
 ${message}
 
-Reply as the assistant now. If you output code, put it in a single fenced \`\`\`js block and keep any explanation to 1-3 sentences.`
+Rules for you:
+- Do exactly what is asked. Do not lecture them about what they should have asked for.
+- Do not volunteer warnings about traps, edge cases, or policy unless they specifically ask you to look for problems. They are being assessed on their judgment, not yours.
+- If they ask you to check or test something, do it properly and report what actually fails.
+- Code goes in a single fenced block. Keep prose to 1-3 sentences.
+
+Reply as the assistant now.`
 
     const reply = await callGemini(prompt, 1024, 0.55)
     if (!reply) return NextResponse.json({ error: 'AI unavailable, try again.' }, { status: 502 })
@@ -119,83 +183,188 @@ Reply as the assistant now. If you output code, put it in a single fenced \`\`\`
     return NextResponse.json({ reply, tokensUsed: cost, model: m.tag })
   }
 
+  /* ── grade the session ──────────────────────────────────────────────── */
   if (action === 'evaluate') {
     const history = (body.history as Msg[]) || []
-    const m = MODELS[body.model as string] || MODELS.gpt
-    const tokensUsed = Number(body.tokensUsed) || 0
-    const tokensBudget = Number(body.tokensBudget) || 10000
-    const secondsUsed = Number(body.secondsUsed) || 0
-    const timeLimit = Number(body.timeLimit) || 1200
-    const reason = (body.reason as string) || 'submit'
-    const endedBy =
-      reason === 'tokens'
-        ? 'they RAN OUT OF TOKENS (locked out)'
-        : reason === 'time'
-          ? 'they RAN OUT OF TIME (locked out)'
-          : 'they submitted'
+    const m = MODEL_BY_ID[String(body.model)] || MODEL_BY_ID.gpt
+    const resolved = await roleFor(body.token as string, body.taskId as string)
+    const rubric = resolved.rubric
+    const key = resolved.custom ? undefined : keyFor(resolved.taskId)
 
-    const userTurns = history.filter((m) => m.role === 'user' && (m.content || '').trim().length > 0).length
+    const tokensUsed = Number(body.tokensUsed) || 0
+    const tokensBudget = Number(body.tokensBudget) || resolved.budget.tokens
+    const secondsUsed = Number(body.secondsUsed) || 0
+    const timeLimit = Number(body.timeLimit) || resolved.budget.seconds
+    const reason = String(body.reason || 'submit')
+    const tel = sanitizeTelemetry(body.telemetry)
+    const signals = deriveSignals(tel, resolved.docs.length)
+
+    const userTurns = history.filter((h) => h.role === 'user' && (h.content || '').trim()).length
     if (userTurns === 0) {
+      const zero: Record<string, number> = {}
+      rubric.dimensions.forEach((d) => (zero[d.id] = 0))
       return NextResponse.json({
         overall: 0,
+        passed: false,
+        passMark: rubric.passMark,
         verdict: 'Nothing submitted',
-        dimensions: { creativity: 0, efficiency: 0, quality: 0 },
+        dimensions: zero,
+        dimensionLabels: rubric.dimensions.map((d) => ({ id: d.id, label: d.label })),
+        traps: [],
         steps: [],
-        analysis: 'You submitted without giving the AI a single instruction or producing any solution. There is nothing to evaluate.',
-        hire: 'No, you did not attempt the task.',
+        signals,
+        analysis:
+          'The session ended without a single instruction to the AI, so there is no work to evaluate.',
+        hire: 'No — the task was not attempted.',
       })
     }
 
-    const tx = transcript(history, 11000)
-    const prompt = `You are the lead examiner for Judgemynt, an AI-employment exam that tests whether a person can be trusted to do real work by directing AI. Be strict and fair, like a senior engineer deciding whether to hire.
+    const requirements = [...(key?.requirements || []), ...resolved.extraRequirements]
+    const traps = rubric.useTraps ? key?.traps || [] : []
 
-CRITICAL: Judge ONLY what literally appears in the transcript below. NEVER invent instructions, steps, or code the candidate did not actually send. The candidate sent ${userTurns} instruction(s) total, if that is few or vague, the scores MUST be low. A high score requires real, specific direction that is visible in the transcript.
+    const endedBy =
+      reason === 'tokens'
+        ? 'they ran out of tokens and were locked out'
+        : reason === 'time'
+          ? 'they ran out of time and were locked out'
+          : 'they submitted deliberately'
 
-THE TASK: ${TASK.brief}
-REQUIREMENTS (the final solution must satisfy ALL):
-${TASK.requirements.map((r, i) => `${i + 1}. ${r}`).join('\n')}
+    const dimBlock = normalized(rubric)
+      .map(({ dim, share }) => `- "${dim.id}" (${dim.label}, ${Math.round(share * 100)}% of the score): ${dim.prompt}`)
+      .join('\n')
 
-MODEL THEY USED: ${m.tag}
-RESOURCES: used ${tokensUsed}/${tokensBudget} tokens and ${secondsUsed}s of ${timeLimit}s. The session ended because ${endedBy}.
+    const trapBlock = traps.length
+      ? traps
+          .map(
+            (t, i) =>
+              `${i + 1}. [${t.id}] ${t.name} (weight ${t.weight})\n   The undirected answer: ${t.naive}\n   Resolving it looks like: ${t.tell}`
+          )
+          .join('\n')
+      : '(none for this task)'
 
-THEIR FULL SESSION (every candidate message and AI reply, in order):
-${tx || '(no interaction)'}
+    const prompt = `You are the lead examiner for Judgemynt. A candidate was given a real work task, a real AI assistant to direct, a token budget, and a clock. You are deciding what their work says about them.
 
-Judge them on three axes, each 0-100:
-- creativity: how original and clever their direction was, sharp prompts, a smart approach, anticipating edge cases, vs generic "just make it work".
-- efficiency: how surgically they spent tokens and time. Few precise moves = high. Lots of wasteful trial-and-error, or running out, = low.
-- quality: how correct and clean the FINAL solution the AI produced under their direction is, checked against EVERY requirement.
+THE HARD RULE: judge ONLY what literally appears in the transcript. Never credit an instruction, a check, or a piece of reasoning the candidate did not actually send. They sent ${userTurns} instruction(s). If that is few or vague, the scores must be low regardless of how good the AI's output happened to be — the AI is not the one being assessed.
 
-Then pick their 3-5 KEY moves and judge each in one short line. End with a blunt hiring call.
+THE TASK:
+${resolved.brief}
+
+WHAT THEY HAD TO DELIVER:
+${resolved.deliverable}
+
+${requirements.length ? `HARD REQUIREMENTS (check the final deliverable against every one):\n${requirements.map((r, i) => `${i + 1}. ${r}`).join('\n')}` : ''}
+
+CONTEXT DOCUMENTS THEY COULD OPEN (${resolved.docs.length}):
+${resolved.docs.map((d) => `- "${d.title}"`).join('\n') || '(none)'}
+
+HIDDEN TRAPS — the candidate could not see these. They are the point of the exercise: each one is something the context documents imply, that an AI given only the brief will get wrong.
+${trapBlock}
+
+RESOURCES: ${tokensUsed}/${tokensBudget} tokens, ${secondsUsed}s of ${timeLimit}s. Session ended because ${endedBy}. Model directed: ${m.tag}.
+
+HOW THEY WORKED (observed, not self-reported):
+${signalsForPrompt(signals)}
+
+FULL SESSION, in order:
+${transcript(history, 12000) || '(no interaction)'}
+${rubric.houseRules ? `\nHOUSE RULES FROM THE HIRING COMPANY — apply these, they override your defaults where they conflict:\n${rubric.houseRules}\n` : ''}
+Score each dimension 0-100:
+${dimBlock}
+
+${traps.length ? `For every trap, decide whether they RESOLVED it. Resolved means the final deliverable or their explicit reasoning handles it — not that they used particular words, and not that the AI mentioned it unprompted while they ignored it.` : ''}
+
+Then pick their 3-5 most consequential moves and judge each in one line. Finish with a blunt hiring call a manager could act on.
 
 Return ONLY raw JSON, no markdown:
 {
-  "overall": <0-100>,
+  "dimensions": { ${rubric.dimensions.map((d) => `"${d.id}": <0-100>`).join(', ')} },
   "verdict": "<punchy 3-6 word verdict>",
-  "dimensions": { "creativity": <0-100>, "efficiency": <0-100>, "quality": <0-100> },
-  "steps": [ { "move": "<candidate move, 8 words max>", "take": "<one-line judgment>" } ],
-  "analysis": "<2-3 sentence overall analysis>",
-  "hire": "<one line: would you trust them to work with AI on the job, and why>"
-}`
+  "traps": [ ${traps.length ? `{ "id": "<trap id>", "resolved": <true|false>, "note": "<one line on what they actually did>" }` : ''} ],
+  "steps": [ { "move": "<what they did, 8 words max>", "take": "<one-line judgment>" } ],
+  "analysis": "<3-4 sentences: what this session says about how they work>",
+  "hire": "<one line: would you trust them with real work alongside AI, and why>"
+}${traps.length ? `\nThe "traps" array must contain exactly ${traps.length} objects, one per trap, using the exact ids given above.` : ''}`
 
-    const raw = await callGemini(prompt, 1500, 0.3)
+    const raw = await callGemini(prompt, 1800, 0.25)
     const p = extractJson(raw)
-    if (!p) return NextResponse.json({ error: 'Examiner hiccup, try /submit again.' }, { status: 502 })
+    if (!p) return NextResponse.json({ error: 'Examiner hiccup — submit again.' }, { status: 502 })
 
-    const dim = (p.dimensions as Record<string, unknown>) || {}
+    const rawDims = (p.dimensions as Record<string, unknown>) || {}
+    const dimensions: Record<string, number> = {}
+    rubric.dimensions.forEach((d) => (dimensions[d.id] = clamp(rawDims[d.id])))
+
+    const rawTraps = Array.isArray(p.traps) ? (p.traps as Record<string, unknown>[]) : []
+    const trapResults = traps.map((t) => {
+      const hit = rawTraps.find((r) => String(r.id) === t.id)
+      return {
+        id: t.id,
+        name: t.name,
+        weight: t.weight,
+        resolved: Boolean(hit?.resolved),
+        note: String(hit?.note || ''),
+      }
+    })
+
+    const overall = overallFrom(rubric, dimensions)
     const steps = Array.isArray(p.steps) ? (p.steps as Record<string, unknown>[]) : []
-    return NextResponse.json({
-      overall: clamp(p.overall),
+
+    const result = {
+      overall,
+      passed: overall >= rubric.passMark,
+      passMark: rubric.passMark,
       verdict: String(p.verdict || 'Assessed'),
-      dimensions: {
-        creativity: clamp(dim.creativity),
-        efficiency: clamp(dim.efficiency),
-        quality: clamp(dim.quality),
-      },
+      dimensions,
+      dimensionLabels: rubric.dimensions.map((d) => ({ id: d.id, label: d.label })),
+      traps: trapResults,
       steps: steps.map((s) => ({ move: String(s.move || ''), take: String(s.take || '') })).slice(0, 6),
+      signals,
       analysis: String(p.analysis || ''),
       hire: String(p.hire || ''),
-    })
+    }
+
+    /* Store it if this was an invited assessment. Never block the candidate's
+       result on a database that might not be configured. */
+    const invite = body.token ? decodeInvite(String(body.token)) : null
+    if (invite) {
+      const db = admin()
+      if (db) {
+        try {
+          await db.from('judgemynt_results').insert({
+            company_id: invite.companyId,
+            company_name: (body.company_name as string) || null,
+            candidate_name: (body.candidate_name as string) || null,
+            candidate_email: (body.candidate_email as string) || null,
+            score: overall,
+            // Legacy columns kept populated so the embeddable widget and any
+            // existing dashboards keep rendering after the rubric change.
+            creativity: dimensions.direction ?? dimensions.judgment ?? null,
+            efficiency: dimensions.efficiency ?? null,
+            quality: dimensions.quality ?? null,
+            verdict: result.verdict,
+            role_id: resolved.roleId,
+            role_name: resolved.roleName,
+            task_id: resolved.taskId,
+            passed: result.passed,
+            pass_mark: rubric.passMark,
+            dimensions,
+            traps: trapResults,
+            signals,
+            tokens_used: tokensUsed,
+            tokens_budget: tokensBudget,
+            seconds_used: secondsUsed,
+            model: m.tag,
+            ended_by: reason,
+            analysis: result.analysis,
+            hire: result.hire,
+            transcript: history.slice(-80),
+          })
+        } catch {
+          /* table may predate this schema; the candidate still gets their score */
+        }
+      }
+    }
+
+    return NextResponse.json(result)
   }
 
   return NextResponse.json({ error: 'Unknown action.' }, { status: 400 })

@@ -1,62 +1,89 @@
 # Judgemynt
 
-**AI can write anything. It cannot tell you when it is wrong.**
+**Use any AI you want. That's the point.**
 
-Judgemynt is an exam for the one skill that survives: judgment. You are handed real AI output with real problems buried in it — a fabricated statistic, a famous myth stated as fact, editorial framing sold as neutral — and you have to catch what is wrong and fix it. A model grades you against a hidden answer key you never see.
+Every screening test broke the day candidates got ChatGPT. The industry's answer was proctoring — lockdown browsers, webcams, plagiarism detectors — an arms race it loses.
 
-Three levels, in order of how hard they are to fake:
+Judgemynt takes the other side of that bet. It *hands* the candidate an AI, then hands them the documents the AI doesn't have, and measures whether they read them.
 
-| Level | Degree | What it tests |
-|---|---|---|
-| 1 | **AI Detection** | Catch what AI gets wrong — fakes, false facts, hidden bias |
-| 2 | **AI Correction** | Fix flawed AI work to a genuinely high standard |
-| 3 | **AI Direction** | Judge and direct AI toward an excellent result |
+## Why this can't be defeated by pasting it into a chatbot
 
-Pass mark is 70. Challenges are grouped into career fields, so the credential means something specific rather than "took an AI course."
+The old version of this product showed you flawed AI text and asked you to find the flaw. That test dies the moment someone thinks to paste it into Claude, which will find every problem instantly.
 
-## Two sides
+So the traps moved. They no longer live in the prose — they live in the **context pack**:
 
-**Candidates** (`/`) pick a field, work through its curriculum, and earn degrees they can show.
+- A refund is 45 days old and policy says 30. Buried in the incident log: their region had a 6-hour outage in their first week, which triggers an exception the policy says not to advertise.
+- Five bugs, one sprint. The loudest is a $14k account. The quiet one is $310k, three days from an SLA breach that voids the renewal.
+- Churn for the board deck. Annual plans stay `status = 'active'` for months after the customer quits, so the comfortable number is wrong.
 
-**Employers** (`/employers`) send a candidate an invite link, get back a scored assessment — creativity, efficiency, quality, and a verdict — and can embed a live scoreboard of results on their careers page (`/widget`, framable from anywhere by design).
+An outside chatbot without those documents cannot help. With them, it's still a judgment call rather than a lookup. And the AI *inside* the workspace is deliberately instructed not to volunteer warnings — ask it to write the refund denial and it will write you a good one.
 
-## How grading works
+## What a session looks like
 
-The catalogue in `src/lib/fields.ts` is the **public** half of every challenge: the brief and the flawed output the browser is allowed to see. The hidden half — the known flaws and the answer key — lives server-side in `src/app/api/grade/route.ts` and never leaves the server. Challenge ids are globally unique and double as the grade key, so adding a field is: append a `JmField` to the catalogue, add its answer keys to the route.
+1. **Brief** — the task, the deliverable, the context pack, and a choice of assistant. Claude costs ×1.25 per message, Gemini ×0.8. Choosing well is part of the assessment.
+2. **Run** — a live chat with the AI, a token budget draining in the corner, and a clock. Reading documents is free. Talking to the AI is not. `/check`, `/docs`, `/model`, `/submit`.
+3. **Result** — a weighted score against the company's rubric, every hidden trap marked caught or missed, the key moves judged one by one, and a working-style portrait.
 
-Two independent brakes on the AI bill:
+## Process telemetry
 
-- `src/lib/ratelimit.ts` — per-IP, caps one abuser (15 grades/min, 30 assessments/min).
-- `src/lib/gemini.ts` — a daily budget with response caching and stale-serving, caps the bill itself. Past budget, callers get a cached answer if one exists, else a clean 429 the UI already handles.
+Because the AI lives inside the workspace, the whole session is observable without a webcam:
+
+- did they open the context pack **before** typing, or after, or never
+- median think time between an AI reply and their next instruction
+- share of input pasted versus typed
+- which commands they reached for
+
+None of it is a cheating detector and none of it is scored on its own. It's the part of the report hiring managers read twice.
+
+## For employers: put your own documents in the exam
+
+This is the product. A role is one configured assessment:
+
+| | |
+|---|---|
+| **Task** | a built-in one, or write your own brief and deliverable |
+| **Your documents** | paste in your real refund policy, SLA, brand rules, pricing table |
+| **Requirements** | objective things the deliverable must do |
+| **Budget** | tokens and minutes — tight tests prioritisation, loose tests depth |
+| **Rubric** | pick dimensions, drag the weights, set the pass mark |
+| **House rules** | free text handed to the examiner: *"we hire for bluntness, don't reward hedging"* |
+
+Send the link. Get back a scored session with the full transcript, what they missed, and how they worked. Embed a scoreboard on your careers page with `/widget`.
+
+The generic tasks are a good demo. A candidate who finds the exception in *your* returns policy has demonstrated something no generic assessment can.
 
 ## Running it
 
 ```bash
 npm install
-cp .env.example .env.local     # fill in GEMINI_API_KEY at minimum
+cp .env.example .env.local     # GEMINI_API_KEY at minimum
 npm run dev
 ```
 
-Only `GEMINI_API_KEY` is required — without it the exam renders but cannot score. Supabase (accounts, employer results) and Resend (the employer contact form) are optional; both degrade to disabled rather than erroring, so the site builds and runs for anyone who clones it.
+Only `GEMINI_API_KEY` is required — without it the workspace renders but cannot grade. Supabase (accounts, roles, results) and Resend (the employer contact form) are optional and degrade to disabled rather than erroring, so the app builds and runs for anyone who clones it.
 
-For the employer side, run `supabase-judgemynt.sql` in the Supabase SQL editor once. That table has RLS enabled and no policies on purpose — every read and write goes through the server with the service role, so candidates cannot read each other's results.
+For the employer side, run `supabase-judgemynt.sql` in the Supabase SQL editor. Both tables have RLS on with no policies on purpose: every read and write goes through the server with the service role, so a candidate holding the anon key can't enumerate results and a company can't read another company's roles.
 
 ## Layout
 
 ```
-src/app/page.tsx              the exam — fields, curriculum, challenge, result
-src/app/Assessment.tsx        the employer-invited assessment flow
-src/app/employers/page.tsx    employer dashboard, invites, embed snippet
-src/app/widget/page.tsx       embeddable results scoreboard
-src/app/api/grade/            challenge grading + the hidden answer keys
-src/app/api/assess/           employer assessment grading
-src/app/api/enterprise/       invite tokens, result storage, widget feed
-src/app/api/contact/          employer inquiry email
-src/lib/fields.ts             field + challenge catalogue (public copy only)
+src/lib/tasks.ts          task catalog — PUBLIC half (brief, deliverable, context docs)
+src/lib/tasks.server.ts   the answer key — requirements and hidden traps, server only
+src/lib/roles.ts          a company's configured assessment, and how it resolves
+src/lib/rubric.ts         dimensions, weights, pass marks
+src/lib/telemetry.ts      process signals derived from workspace events
+src/lib/db.ts             service-role access + invite token encoding
+
+src/app/page.tsx          landing + task picker
+src/app/Workspace.tsx     the assessment: brief → run → result
+src/app/employers/        role builder, candidate results, transcripts
+src/app/widget/           embeddable scoreboard
+src/app/api/assess/       task resolution, the AI, and grading
+src/app/api/company/      role CRUD, invites, results
 ```
 
-Next.js App Router, React 19, Tailwind 4, TypeScript.
+Next.js App Router, React 19, Tailwind 4, TypeScript. Six runtime dependencies.
 
 ## History
 
-Judgemynt was built inside the Nexus Finance repository and was never related to it. This repository is that code extracted to stand on its own: routes moved from `/judgemynt/*` to the root, shared helpers (`useAuth`, `supabase`, `ratelimit`, `gemini`) copied in and trimmed to what Judgemynt actually uses, and a layout and theme of its own.
+Judgemynt was built inside the Nexus Finance repository and was never related to it. This repository is that code extracted to stand on its own, then rebuilt around the work-sample model described above.

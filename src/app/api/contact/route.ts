@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
-const FROM = process.env.EMAIL_FROM ?? 'Judgemynt <noreply@judgemynt.com>'
-const TO = process.env.CONTACT_EMAIL ?? 'enterprise@judgemynt.com'
+const FROM = process.env.EMAIL_FROM ?? 'Judgemynt <onboarding@resend.dev>'
+const TO = process.env.CONTACT_EMAIL ?? 'judgemynt@gmail.com'
 const OK = !!(process.env.RESEND_API_KEY && !process.env.RESEND_API_KEY.includes('your_'))
 
 function esc(s: unknown): string {

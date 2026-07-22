@@ -1,311 +1,926 @@
 'use client'
+/* ════════════════════════════════════════════════════════════════════════
+   Employer console.
 
-import { useEffect, useState } from 'react'
+   The whole pitch of the paid side is on this page: a company does not buy a
+   generic assessment, they build one out of their own documents. So the role
+   builder is the centre of the screen, not a settings sub-page — adding your
+   real refund policy has to feel like the main thing you came to do.
+   ════════════════════════════════════════════════════════════════════════ */
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import Link from 'next/link'
-import { Crown, Copy, Check, RefreshCw, Send, Building2, Code2, Users } from 'lucide-react'
+import {
+  Plus, Trash2, Copy, Check, X, FileText, Loader2, ChevronLeft, ChevronDown,
+  Link2, Users, SlidersHorizontal, Eye, AlertTriangle,
+} from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
-import { supabase } from '@/lib/supabase'
 
 const TEAL = '#00d4aa'
 const BLUE = '#1e90ff'
+const RED = '#ff5470'
+const mono = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
 
+interface Dimension { id: string; label: string; weight: number; prompt: string }
+interface Rubric { dimensions: Dimension[]; passMark: number; useTraps: boolean; houseRules?: string }
+interface Doc { id: string; title: string; kind: string; body: string }
+interface PresetTask {
+  id: string; title: string; role: string; roleEmoji: string; color: string
+  tagline: string; difficulty: string; docs: { id: string; title: string; kind: string }[]
+  budget: { tokens: number; seconds: number }
+}
+interface Role {
+  id?: string
+  name: string
+  kind: 'preset' | 'custom'
+  task_id: string | null
+  brief: string | null
+  deliverable: string | null
+  docs: Doc[]
+  requirements: string[]
+  budget_tokens: number
+  budget_seconds: number
+  rubric: Rubric
+  active: boolean
+  invite?: string
+}
 interface Result {
-  candidate_name?: string
-  candidate_email?: string
-  score?: number
-  creativity?: number
-  efficiency?: number
-  quality?: number
-  verdict?: string
-  created_at?: string
+  id: string
+  candidate_name: string | null
+  candidate_email: string | null
+  score: number | null
+  verdict: string | null
+  role_name: string | null
+  passed: boolean | null
+  pass_mark: number | null
+  dimensions: Record<string, number> | null
+  traps: { id: string; name: string; resolved: boolean; note: string }[] | null
+  signals: { notes?: string[] } | null
+  analysis: string | null
+  hire: string | null
+  tokens_used: number | null
+  seconds_used: number | null
+  model: string | null
+  ended_by: string | null
+  transcript: { role: string; content: string }[] | null
+  created_at: string
 }
 
-function GoogleMark() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 48 48" aria-hidden="true">
-      <path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.6l6.7-6.7C35.6 2.6 30.2 0 24 0 14.6 0 6.4 5.4 2.5 13.3l7.8 6.1C12.2 13.3 17.6 9.5 24 9.5z" />
-      <path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.5 3-2.2 5.5-4.7 7.2l7.3 5.7c4.3-4 6.8-9.9 6.8-17.4z" />
-      <path fill="#FBBC05" d="M10.3 28.6c-.5-1.5-.8-3-.8-4.6s.3-3.1.8-4.6l-7.8-6.1C.9 16.3 0 20 0 24s.9 7.7 2.5 10.7l7.8-6.1z" />
-      <path fill="#34A853" d="M24 48c6.2 0 11.4-2 15.2-5.5l-7.3-5.7c-2 1.4-4.7 2.3-7.9 2.3-6.4 0-11.8-3.8-13.7-9.3l-7.8 6.1C6.4 42.6 14.6 48 24 48z" />
-    </svg>
-  )
-}
+const KINDS = ['policy', 'data', 'spec', 'thread', 'log']
 
-export default function EmployersPage() {
-  const { user, isLoggedIn, signInWithGoogle, getToken, signOut } = useAuth()
-  const meta = (user?.user_metadata || {}) as Record<string, string>
-  const companyName = meta.company_name || ''
-  const isCompany = isLoggedIn && companyName.length > 0
+export default function Employers() {
+  const { user, signInWithGoogle, signOut, getToken, isLoggedIn, loading } = useAuth()
+  const [tab, setTab] = useState<'roles' | 'results'>('roles')
+  const [presets, setPresets] = useState<PresetTask[]>([])
+  const [library, setLibrary] = useState<Dimension[]>([])
+  const [defaultRubric, setDefaultRubric] = useState<Rubric | null>(null)
+  const [roles, setRoles] = useState<Role[]>([])
+  const [editing, setEditing] = useState<Role | null>(null)
+  const [results, setResults] = useState<Result[]>([])
+  const [openResult, setOpenResult] = useState<Result | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const [copied, setCopied] = useState('')
+
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
   const companyId = user?.id || ''
 
-  const [origin, setOrigin] = useState('')
-  useEffect(() => setOrigin(window.location.origin), [])
-
-  const inviteToken = companyId ? btoa(companyId).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '') : ''
-  const inviteLink = origin && inviteToken ? `${origin}/?invite=${inviteToken}` : ''
-  const widgetSnippet = origin && companyId ? `<iframe src="${origin}/widget?c=${companyId}" width="100%" height="440" style="border:0;border-radius:16px"></iframe>` : ''
-
-  return (
-    <div className="min-h-screen bg-[#040a12] text-[#eaf4fa] font-inter">
-      <link rel="stylesheet" href="https://db.onlinewebfonts.com/c/8b75d9dcff6a48c35a46656192adf019?family=FSP+DEMO+-+PODIUM+Sharp+4.11" />
-      <style>{`
-        .font-podium{font-family:"FSP DEMO - PODIUM Sharp 4.11", var(--font-sans), system-ui, sans-serif;}
-        .font-inter{font-family:var(--font-sans), Inter, system-ui, sans-serif;}
-      `}</style>
-
-      <nav className="flex items-center justify-between px-6 sm:px-10 py-5 border-b border-white/5">
-        <Link href="/" className="font-podium text-xl font-bold uppercase tracking-wider text-white">
-          Judgemynt
-        </Link>
-        <span className="text-[11px] uppercase tracking-widest text-white/50">For Employers</span>
-      </nav>
-
-      <div className="max-w-4xl mx-auto px-6 sm:px-10 py-12 pb-24">
-        <div className="text-xs uppercase tracking-[0.3em]" style={{ color: TEAL }}>For Employers</div>
-        <h1 className="font-podium text-[clamp(2.2rem,6vw,4.2rem)] uppercase leading-[0.95] mt-3">
-          Hire people who can
-          <br />
-          actually use AI.
-        </h1>
-        <p className="text-white/60 max-w-xl mt-4 text-sm sm:text-base">
-          Send candidates a real, timed AI-judgment exam. Get back a verified score, creativity, efficiency, and quality,
-          and watch it land on your hiring page automatically.
-        </p>
-
-        {!isCompany ? (
-          <CompanyGate isLoggedIn={isLoggedIn} onGoogle={signInWithGoogle} suggested={meta.company_name || meta.name || ''} />
-        ) : (
-          <Dashboard
-            companyName={companyName}
-            inviteLink={inviteLink}
-            widgetSnippet={widgetSnippet}
-            origin={origin}
-            companyId={companyId}
-            getToken={getToken}
-            onSignOut={signOut}
-          />
-        )}
-
-        <ContactForm defaultCompany={companyName} defaultEmail={user?.email || ''} />
-      </div>
-    </div>
+  const call = useCallback(
+    async (body: Record<string, unknown>) => {
+      const token = await getToken()
+      const res = await fetch('/api/company', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(body),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'Request failed')
+      return d
+    },
+    [getToken]
   )
-}
 
-function CompanyGate({ isLoggedIn, onGoogle, suggested }: { isLoggedIn: boolean; onGoogle: () => void; suggested: string }) {
-  const [name, setName] = useState(suggested)
-  const [saving, setSaving] = useState(false)
-  const [err, setErr] = useState('')
+  // Options are public, so they load whether or not anyone is signed in.
+  useEffect(() => {
+    fetch('/api/company', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'options' }),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (Array.isArray(d?.tasks)) setPresets(d.tasks)
+        if (Array.isArray(d?.dimensions)) setLibrary(d.dimensions)
+        if (d?.defaultRubric) setDefaultRubric(d.defaultRubric)
+      })
+      .catch(() => {})
+  }, [])
 
-  if (!isLoggedIn) {
+  const refresh = useCallback(async () => {
+    if (!isLoggedIn) return
+    setBusy(true)
+    setErr('')
+    try {
+      const [r, s] = await Promise.all([call({ action: 'roles.list' }), call({ action: 'results.list' })])
+      setRoles(r.roles || [])
+      setResults(s.results || [])
+    } catch (e) {
+      setErr((e as Error).message)
+    }
+    setBusy(false)
+  }, [call, isLoggedIn])
+
+  useEffect(() => {
+    refresh()
+  }, [refresh])
+
+  function blankRole(): Role {
+    return {
+      name: '',
+      kind: 'preset',
+      task_id: presets[0]?.id || 'slugify',
+      brief: null,
+      deliverable: null,
+      docs: [],
+      requirements: [],
+      budget_tokens: 10000,
+      budget_seconds: 1200,
+      rubric: defaultRubric || { dimensions: library.slice(0, 4), passMark: 70, useTraps: true },
+      active: true,
+    }
+  }
+
+  async function saveRole() {
+    if (!editing) return
+    setBusy(true)
+    setErr('')
+    try {
+      await call({ action: 'roles.save', id: editing.id, role: editing })
+      setEditing(null)
+      await refresh()
+    } catch (e) {
+      setErr((e as Error).message)
+    }
+    setBusy(false)
+  }
+
+  async function removeRole(id: string) {
+    setBusy(true)
+    try {
+      await call({ action: 'roles.delete', id })
+      await refresh()
+    } catch (e) {
+      setErr((e as Error).message)
+    }
+    setBusy(false)
+  }
+
+  function copy(text: string, tag: string) {
+    navigator.clipboard?.writeText(text).then(() => {
+      setCopied(tag)
+      setTimeout(() => setCopied(''), 1600)
+    })
+  }
+
+  /* ── signed out ─────────────────────────────────────────────────────── */
+  if (!loading && !isLoggedIn) {
     return (
-      <div className="mt-10 rounded-2xl border border-white/10 bg-white/[0.03] p-8 text-center max-w-md">
-        <Building2 className="w-9 h-9 mx-auto" style={{ color: TEAL }} />
-        <div className="font-podium text-xl uppercase mt-3">Employers only</div>
-        <p className="text-white/55 text-sm mt-2">Sign in to set up your company and start issuing assessments.</p>
-        <button onClick={onGoogle} className="mt-5 w-full rounded-xl py-3 font-semibold text-sm bg-white text-[#1f2937] flex items-center justify-center gap-2">
-          <GoogleMark /> Continue with Google
-        </button>
-      </div>
+      <Shell>
+        <div className="max-w-md mx-auto text-center pt-24">
+          <div className="font-podium text-3xl uppercase">Employers only</div>
+          <p className="text-white/50 mt-3 leading-relaxed">
+            Sign in to build an assessment out of your own documents, send it to candidates, and
+            read what came back.
+          </p>
+          <button
+            onClick={signInWithGoogle}
+            className="mt-6 rounded-full px-7 py-3.5 font-semibold text-[#04121a]"
+            style={{ background: `linear-gradient(110deg, ${TEAL}, ${BLUE})` }}
+          >
+            Sign in with Google
+          </button>
+          <div className="mt-10 text-white/30 text-sm">
+            Not hiring?{' '}
+            <Link href="/" className="underline hover:text-white/60">
+              Take an assessment instead
+            </Link>
+          </div>
+        </div>
+      </Shell>
     )
   }
 
-  return (
-    <div className="mt-10 rounded-2xl border border-white/10 bg-white/[0.03] p-8 max-w-md">
-      <div className="font-podium text-xl uppercase">Set up your company</div>
-      <p className="text-white/55 text-sm mt-1">This name appears to candidates and on your dashboard.</p>
-      <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Company name" className="mt-4 w-full bg-white/[0.04] border border-white/10 focus:border-white/30 rounded-xl px-3 py-2.5 text-sm outline-none" />
-      {err && <div className="text-[#ff5470] text-xs mt-2">{err}</div>}
-      <button
-        onClick={async () => {
-          if (name.trim().length < 2) { setErr('Enter your company name.'); return }
-          if (!supabase) { setErr('Auth not configured.'); return }
-          setSaving(true); setErr('')
-          const { error } = await supabase.auth.updateUser({ data: { company_name: name.trim(), account_type: 'company' } })
-          setSaving(false)
-          if (error) setErr(error.message)
-          else window.location.reload()
-        }}
-        disabled={saving}
-        className="mt-4 w-full rounded-xl py-3 font-semibold text-sm text-[#06121f] disabled:opacity-60"
-        style={{ background: `linear-gradient(110deg, ${TEAL}, ${BLUE})` }}
-      >
-        {saving ? 'Saving…' : 'Create company account'}
-      </button>
-    </div>
-  )
-}
+  /* ── role editor ────────────────────────────────────────────────────── */
+  if (editing) {
+    const preset = presets.find((p) => p.id === editing.task_id)
+    return (
+      <Shell>
+        <button onClick={() => setEditing(null)} className="flex items-center gap-1 text-white/45 text-sm hover:text-white transition">
+          <ChevronLeft className="w-4 h-4" /> All roles
+        </button>
 
-function CopyRow({ value, label }: { value: string; label: string }) {
-  const [copied, setCopied] = useState(false)
-  return (
-    <div className="flex items-stretch gap-2 mt-3">
-      <code className="flex-1 min-w-0 bg-black/40 border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white/70 overflow-x-auto whitespace-nowrap">{value || '…'}</code>
-      <button
-        onClick={() => { if (value) { navigator.clipboard.writeText(value); setCopied(true); setTimeout(() => setCopied(false), 1500) } }}
-        className="rounded-xl px-3 flex items-center gap-1.5 text-sm font-semibold text-[#06121f]"
-        style={{ background: TEAL }}
-        aria-label={`Copy ${label}`}
-      >
-        {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-      </button>
-    </div>
-  )
-}
+        <h1 className="font-podium text-[clamp(1.8rem,5vw,3rem)] uppercase mt-5">
+          {editing.id ? 'Edit role' : 'New role'}
+        </h1>
 
-function Dashboard({
-  companyName, inviteLink, widgetSnippet, origin, companyId, getToken, onSignOut,
-}: {
-  companyName: string
-  inviteLink: string
-  widgetSnippet: string
-  origin: string
-  companyId: string
-  getToken: () => Promise<string | null>
-  onSignOut: () => void
-}) {
-  const [results, setResults] = useState<Result[]>([])
-  const [loading, setLoading] = useState(false)
+        {err && <Banner tone="bad">{err}</Banner>}
 
-  async function refresh() {
-    setLoading(true)
-    try {
-      const token = await getToken()
-      const res = await fetch('/api/enterprise', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: token ? `Bearer ${token}` : '' },
-        body: JSON.stringify({ action: 'list' }),
-      })
-      const d = await res.json()
-      setResults(d.results || [])
-    } catch { /* ignore */ }
-    setLoading(false)
-  }
-  useEffect(() => { refresh() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+        <Field label="Role name" hint="What the candidate sees at the top of their assessment.">
+          <input
+            value={editing.name}
+            onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+            placeholder="Support Specialist — final round"
+            className="w-full bg-white/[0.04] border border-white/10 focus:border-white/30 rounded-xl px-3.5 py-2.5 outline-none transition"
+          />
+        </Field>
 
-  const card = 'rounded-2xl border border-white/10 bg-white/[0.03] p-6 mt-6'
+        <Field label="Task" hint="Start from a built-in task, or write your own from scratch.">
+          <div className="flex gap-2 mb-3">
+            {(['preset', 'custom'] as const).map((k) => (
+              <button
+                key={k}
+                onClick={() => setEditing({ ...editing, kind: k })}
+                className="rounded-full px-4 py-1.5 text-[13px] border transition"
+                style={{
+                  background: editing.kind === k ? `${TEAL}18` : 'transparent',
+                  borderColor: editing.kind === k ? `${TEAL}55` : 'rgba(255,255,255,.12)',
+                  color: editing.kind === k ? TEAL : 'rgba(255,255,255,.6)',
+                }}
+              >
+                {k === 'preset' ? 'Built-in task' : 'Write my own'}
+              </button>
+            ))}
+          </div>
 
-  return (
-    <div className="mt-8">
-      <div className="flex items-center justify-between text-xs">
-        <span className="text-white/50">Signed in as <span className="text-white">{companyName}</span></span>
-        <button onClick={onSignOut} className="text-white/40 hover:text-white">Sign out</button>
-      </div>
+          {editing.kind === 'preset' ? (
+            <div className="grid sm:grid-cols-2 gap-2">
+              {presets.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() =>
+                    setEditing({
+                      ...editing,
+                      task_id: t.id,
+                      budget_tokens: t.budget.tokens,
+                      budget_seconds: t.budget.seconds,
+                    })
+                  }
+                  className="text-left rounded-xl border p-3.5 transition"
+                  style={{
+                    background: editing.task_id === t.id ? `${t.color}12` : 'rgba(255,255,255,.02)',
+                    borderColor: editing.task_id === t.id ? `${t.color}60` : 'rgba(255,255,255,.09)',
+                  }}
+                >
+                  <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest" style={{ color: t.color }}>
+                    <span>{t.roleEmoji}</span> {t.role}
+                  </div>
+                  <div className="text-[14px] mt-2 leading-snug">{t.title}</div>
+                  <div className="text-white/35 text-[12px] mt-1">{t.docs.length} built-in documents</div>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <textarea
+                value={editing.brief || ''}
+                onChange={(e) => setEditing({ ...editing, brief: e.target.value })}
+                rows={5}
+                placeholder="What is the candidate being asked to do? Write it as you would brief a new hire — the AI they direct sees this too."
+                className="w-full bg-white/[0.04] border border-white/10 focus:border-white/30 rounded-xl px-3.5 py-2.5 outline-none resize-y transition"
+              />
+              <input
+                value={editing.deliverable || ''}
+                onChange={(e) => setEditing({ ...editing, deliverable: e.target.value })}
+                placeholder="What must they hand in? e.g. 'The final customer email, ready to send.'"
+                className="w-full bg-white/[0.04] border border-white/10 focus:border-white/30 rounded-xl px-3.5 py-2.5 outline-none transition"
+              />
+            </div>
+          )}
+        </Field>
 
-      {/* Issue an assessment */}
-      <div className={card}>
-        <div className="flex items-center gap-2 text-sm font-semibold"><Users className="w-4 h-4" style={{ color: TEAL }} /> Issue an assessment</div>
-        <p className="text-white/55 text-sm mt-1">Send this link to anyone applying. They take the exam; their score lands in your dashboard and widget automatically.</p>
-        <CopyRow value={inviteLink} label="invite link" />
-      </div>
+        {editing.kind === 'preset' && preset && (
+          <Field label="Override the brief" hint="Optional. Leave empty to use the built-in wording.">
+            <textarea
+              value={editing.brief || ''}
+              onChange={(e) => setEditing({ ...editing, brief: e.target.value || null })}
+              rows={3}
+              placeholder={preset.title}
+              className="w-full bg-white/[0.04] border border-white/10 focus:border-white/30 rounded-xl px-3.5 py-2.5 outline-none resize-y transition text-[14px]"
+            />
+          </Field>
+        )}
 
-      {/* Results */}
-      <div className={card}>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-sm font-semibold"><Building2 className="w-4 h-4" style={{ color: TEAL }} /> Candidate results</div>
-          <button onClick={refresh} className="text-white/50 hover:text-white text-xs flex items-center gap-1"><RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh</button>
-        </div>
-        {results.length === 0 ? (
-          <p className="text-white/45 text-sm mt-3">No candidates yet. Share your invite link above, results appear here automatically.</p>
-        ) : (
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-white/40 text-[11px] uppercase tracking-wider">
-                  <th className="text-left font-medium pb-2">Candidate</th>
-                  <th className="text-right font-medium pb-2">Score</th>
-                  <th className="text-right font-medium pb-2 hidden sm:table-cell">Crea</th>
-                  <th className="text-right font-medium pb-2 hidden sm:table-cell">Eff</th>
-                  <th className="text-right font-medium pb-2 hidden sm:table-cell">Qual</th>
-                  <th className="text-left font-medium pb-2 pl-3">Verdict</th>
-                </tr>
-              </thead>
-              <tbody>
-                {results.map((r, i) => (
-                  <tr key={i} className="border-t border-white/5">
-                    <td className="py-2.5 pr-2">{r.candidate_name || 'Anonymous'}</td>
-                    <td className="py-2.5 text-right font-bold" style={{ color: TEAL }}>{r.score ?? '--'}</td>
-                    <td className="py-2.5 text-right text-white/60 hidden sm:table-cell">{r.creativity ?? '--'}</td>
-                    <td className="py-2.5 text-right text-white/60 hidden sm:table-cell">{r.efficiency ?? '--'}</td>
-                    <td className="py-2.5 text-right text-white/60 hidden sm:table-cell">{r.quality ?? '--'}</td>
-                    <td className="py-2.5 pl-3 text-white/55">{r.verdict || ''}</td>
-                  </tr>
+        {/* the differentiator */}
+        <Field
+          label="Your context documents"
+          hint="This is the part that makes the assessment yours. Paste in your real policy, SLA, brand rules, or data. The candidate can read these; the AI cannot, unless they tell it."
+        >
+          {editing.kind === 'preset' && preset && preset.docs.length > 0 && (
+            <div className="mb-3 rounded-xl border border-white/[0.08] p-3 bg-white/[0.02]">
+              <div className="text-[11px] uppercase tracking-widest text-white/35 mb-2">
+                Built in to this task — kept automatically
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {preset.docs.map((d) => (
+                  <span key={d.id} className="text-[11.5px] px-2 py-1 rounded-full bg-white/[0.05] text-white/55">
+                    {d.title}
+                  </span>
                 ))}
-              </tbody>
-            </table>
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-2.5">
+            {editing.docs.map((d, i) => (
+              <div key={i} className="rounded-xl border border-white/10 p-3.5 bg-white/[0.02]">
+                <div className="flex gap-2 items-center">
+                  <FileText className="w-4 h-4 text-white/30 shrink-0" />
+                  <input
+                    value={d.title}
+                    onChange={(e) => {
+                      const docs = [...editing.docs]
+                      docs[i] = { ...d, title: e.target.value }
+                      setEditing({ ...editing, docs })
+                    }}
+                    placeholder="Document title — e.g. 'Refund policy (internal)'"
+                    className="flex-1 bg-transparent outline-none text-[14px]"
+                  />
+                  <select
+                    value={d.kind}
+                    onChange={(e) => {
+                      const docs = [...editing.docs]
+                      docs[i] = { ...d, kind: e.target.value }
+                      setEditing({ ...editing, docs })
+                    }}
+                    className="bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1 text-[12px] outline-none"
+                    style={{ fontFamily: mono }}
+                  >
+                    {KINDS.map((k) => (
+                      <option key={k} value={k} style={{ background: '#0b1420' }}>
+                        {k}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => setEditing({ ...editing, docs: editing.docs.filter((_, j) => j !== i) })}
+                    className="text-white/30 hover:text-[#ff5470] transition"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+                <textarea
+                  value={d.body}
+                  onChange={(e) => {
+                    const docs = [...editing.docs]
+                    docs[i] = { ...d, body: e.target.value }
+                    setEditing({ ...editing, docs })
+                  }}
+                  rows={5}
+                  placeholder="Paste the document. Anything the candidate should be able to look up — and anything that changes what the right answer is."
+                  className="w-full mt-2.5 bg-black/25 border border-white/[0.07] rounded-lg px-3 py-2 outline-none resize-y text-[13px] leading-relaxed"
+                  style={{ fontFamily: mono }}
+                />
+              </div>
+            ))}
           </div>
-        )}
-      </div>
 
-      {/* Widget */}
-      <div className={card}>
-        <div className="flex items-center gap-2 text-sm font-semibold"><Code2 className="w-4 h-4" style={{ color: TEAL }} /> Embed the scoreboard</div>
-        <p className="text-white/55 text-sm mt-1">Paste this on your careers or hiring page, candidate scores update live.</p>
-        <CopyRow value={widgetSnippet} label="embed code" />
-        {origin && companyId && (
-          <div className="mt-4">
-            <div className="text-[11px] uppercase tracking-widest text-white/40 mb-2">Live preview</div>
-            <iframe src={`${origin}/widget?c=${companyId}`} width="100%" height="320" style={{ border: 0, borderRadius: 16 }} title="Judgemynt widget preview" />
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function ContactForm({ defaultCompany, defaultEmail }: { defaultCompany: string; defaultEmail: string }) {
-  const [name, setName] = useState('')
-  const [email, setEmail] = useState(defaultEmail)
-  const [company, setCompany] = useState(defaultCompany)
-  const [message, setMessage] = useState('')
-  const [sending, setSending] = useState(false)
-  const [sent, setSent] = useState(false)
-  const [err, setErr] = useState('')
-
-  useEffect(() => { setEmail((e) => e || defaultEmail); setCompany((c) => c || defaultCompany) }, [defaultEmail, defaultCompany])
-
-  return (
-    <div className="mt-12 rounded-2xl border border-white/10 bg-white/[0.03] p-6 sm:p-8">
-      <div className="text-xs uppercase tracking-[0.3em]" style={{ color: TEAL }}>Talk to us</div>
-      <div className="font-podium text-2xl uppercase mt-2">Hiring at scale?</div>
-      <p className="text-white/55 text-sm mt-1">Custom roles, bulk seats, ATS integration, tell us what you need.</p>
-
-      {sent ? (
-        <div className="mt-5 rounded-xl px-4 py-4 text-sm" style={{ background: 'rgba(0,212,170,.08)', border: `1px solid ${TEAL}40`, color: '#aef0e0' }}>
-          Got it, we&apos;ll get back to you shortly.
-        </div>
-      ) : (
-        <>
-          <div className="grid sm:grid-cols-2 gap-3 mt-5">
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" className="bg-white/[0.04] border border-white/10 focus:border-white/30 rounded-xl px-3 py-2.5 text-sm outline-none" />
-            <input value={company} onChange={(e) => setCompany(e.target.value)} placeholder="Company" className="bg-white/[0.04] border border-white/10 focus:border-white/30 rounded-xl px-3 py-2.5 text-sm outline-none" />
-          </div>
-          <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Work email" className="mt-3 w-full bg-white/[0.04] border border-white/10 focus:border-white/30 rounded-xl px-3 py-2.5 text-sm outline-none" />
-          <textarea value={message} onChange={(e) => setMessage(e.target.value)} placeholder="What are you hiring for?" rows={4} className="mt-3 w-full bg-white/[0.04] border border-white/10 focus:border-white/30 rounded-xl px-3 py-2.5 text-sm outline-none resize-y" />
-          {err && <div className="text-[#ff5470] text-xs mt-2">{err}</div>}
           <button
-            onClick={async () => {
-              if (!email.trim() || !message.trim()) { setErr('Add your email and a message.'); return }
-              setSending(true); setErr('')
-              try {
-                const res = await fetch('/api/contact', {
-                  method: 'POST', headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ name, email, company, message }),
-                })
-                const d = await res.json()
-                if (!res.ok) setErr(d.error || 'Could not send.')
-                else setSent(true)
-              } catch { setErr('Network error.') }
-              setSending(false)
-            }}
-            disabled={sending}
-            className="mt-4 flex items-center gap-2 rounded-xl px-6 py-3 font-semibold text-sm text-[#06121f] disabled:opacity-60"
+            onClick={() =>
+              setEditing({
+                ...editing,
+                docs: [...editing.docs, { id: `doc-${Date.now()}`, title: '', kind: 'policy', body: '' }],
+              })
+            }
+            className="mt-2.5 flex items-center gap-1.5 text-[13.5px] rounded-full px-4 py-2 border border-white/15 hover:bg-white/5 transition"
+          >
+            <Plus className="w-3.5 h-3.5" /> Add a document
+          </button>
+        </Field>
+
+        <Field label="Extra requirements" hint="Objective things the deliverable must do. Checked one by one when scoring Quality.">
+          <div className="space-y-2">
+            {editing.requirements.map((r, i) => (
+              <div key={i} className="flex gap-2">
+                <input
+                  value={r}
+                  onChange={(e) => {
+                    const reqs = [...editing.requirements]
+                    reqs[i] = e.target.value
+                    setEditing({ ...editing, requirements: reqs })
+                  }}
+                  placeholder="e.g. mentions the customer by name"
+                  className="flex-1 bg-white/[0.04] border border-white/10 focus:border-white/30 rounded-xl px-3.5 py-2 outline-none text-[14px] transition"
+                />
+                <button
+                  onClick={() => setEditing({ ...editing, requirements: editing.requirements.filter((_, j) => j !== i) })}
+                  className="text-white/30 hover:text-[#ff5470] transition px-2"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+          <button
+            onClick={() => setEditing({ ...editing, requirements: [...editing.requirements, ''] })}
+            className="mt-2 flex items-center gap-1.5 text-[13.5px] rounded-full px-4 py-2 border border-white/15 hover:bg-white/5 transition"
+          >
+            <Plus className="w-3.5 h-3.5" /> Add requirement
+          </button>
+        </Field>
+
+        <Field label="Budget" hint="How much AI they get, and how long. Tighter budgets test prioritisation; looser ones test depth.">
+          <div className="grid sm:grid-cols-2 gap-3">
+            <Num
+              label="Tokens"
+              value={editing.budget_tokens}
+              min={2000}
+              max={60000}
+              step={1000}
+              onChange={(v) => setEditing({ ...editing, budget_tokens: v })}
+            />
+            <Num
+              label="Minutes"
+              value={Math.round(editing.budget_seconds / 60)}
+              min={5}
+              max={120}
+              step={5}
+              onChange={(v) => setEditing({ ...editing, budget_seconds: v * 60 })}
+            />
+          </div>
+        </Field>
+
+        <Field label="Rubric" hint="What you actually care about. Weights are relative — 3 and 1 means the first counts three times as much.">
+          <div className="space-y-2.5">
+            {editing.rubric.dimensions.map((d, i) => (
+              <div key={d.id} className="flex items-center gap-3 rounded-xl border border-white/10 p-3 bg-white/[0.02]">
+                <div className="flex-1 min-w-0">
+                  <div className="text-[14px]">{d.label}</div>
+                  <div className="text-white/35 text-[12.5px] mt-0.5 line-clamp-2">{d.prompt}</div>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={5}
+                  step={1}
+                  value={d.weight}
+                  onChange={(e) => {
+                    const dims = [...editing.rubric.dimensions]
+                    dims[i] = { ...d, weight: Number(e.target.value) }
+                    setEditing({ ...editing, rubric: { ...editing.rubric, dimensions: dims } })
+                  }}
+                  className="w-28 accent-[#00d4aa]"
+                />
+                <span className="w-6 text-right tabular-nums text-[13px]" style={{ fontFamily: mono, color: d.weight ? TEAL : 'rgba(255,255,255,.25)' }}>
+                  {d.weight}
+                </span>
+                <button
+                  onClick={() =>
+                    setEditing({
+                      ...editing,
+                      rubric: { ...editing.rubric, dimensions: editing.rubric.dimensions.filter((_, j) => j !== i) },
+                    })
+                  }
+                  className="text-white/25 hover:text-[#ff5470] transition"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {library.filter((l) => !editing.rubric.dimensions.some((d) => d.id === l.id)).length > 0 && (
+            <div className="flex flex-wrap gap-2 mt-3">
+              {library
+                .filter((l) => !editing.rubric.dimensions.some((d) => d.id === l.id))
+                .map((l) => (
+                  <button
+                    key={l.id}
+                    onClick={() =>
+                      setEditing({
+                        ...editing,
+                        rubric: { ...editing.rubric, dimensions: [...editing.rubric.dimensions, l] },
+                      })
+                    }
+                    className="flex items-center gap-1.5 text-[13px] rounded-full px-3.5 py-1.5 border border-white/15 hover:bg-white/5 transition"
+                  >
+                    <Plus className="w-3 h-3" /> {l.label}
+                  </button>
+                ))}
+            </div>
+          )}
+
+          <div className="grid sm:grid-cols-2 gap-3 mt-4">
+            <Num
+              label="Pass mark"
+              value={editing.rubric.passMark}
+              min={0}
+              max={100}
+              step={5}
+              onChange={(v) => setEditing({ ...editing, rubric: { ...editing.rubric, passMark: v } })}
+            />
+            <label className="flex items-center gap-2.5 rounded-xl border border-white/10 px-3.5 py-2.5 bg-white/[0.02] cursor-pointer">
+              <input
+                type="checkbox"
+                checked={editing.rubric.useTraps}
+                onChange={(e) => setEditing({ ...editing, rubric: { ...editing.rubric, useTraps: e.target.checked } })}
+                className="accent-[#00d4aa]"
+              />
+              <span className="text-[13.5px]">Report hidden traps</span>
+            </label>
+          </div>
+
+          <textarea
+            value={editing.rubric.houseRules || ''}
+            onChange={(e) => setEditing({ ...editing, rubric: { ...editing.rubric, houseRules: e.target.value } })}
+            rows={3}
+            placeholder="House rules for the examiner. e.g. 'We hire for bluntness — do not reward hedging.' These override our defaults where they conflict."
+            className="w-full mt-3 bg-white/[0.04] border border-white/10 focus:border-white/30 rounded-xl px-3.5 py-2.5 outline-none resize-y text-[14px] transition"
+          />
+        </Field>
+
+        <div className="flex gap-3 mt-8 mb-16">
+          <button
+            onClick={saveRole}
+            disabled={busy || !editing.name.trim()}
+            className="rounded-full px-7 py-3 font-semibold text-[#04121a] disabled:opacity-40 transition"
             style={{ background: `linear-gradient(110deg, ${TEAL}, ${BLUE})` }}
           >
-            <Send className="w-4 h-4" /> {sending ? 'Sending…' : 'Send'}
+            {busy ? 'Saving…' : 'Save role'}
           </button>
+          <button onClick={() => setEditing(null)} className="rounded-full px-6 py-3 border border-white/15 hover:bg-white/5 transition">
+            Cancel
+          </button>
+        </div>
+      </Shell>
+    )
+  }
+
+  /* ── console ────────────────────────────────────────────────────────── */
+  return (
+    <Shell>
+      <div className="flex items-center gap-3 flex-wrap">
+        <h1 className="font-podium text-[clamp(1.8rem,5vw,3rem)] uppercase">Your assessments</h1>
+        <button onClick={signOut} className="ml-auto text-white/35 hover:text-white text-[13.5px] transition">
+          Sign out
+        </button>
+      </div>
+
+      <div className="flex gap-2 mt-6">
+        {(['roles', 'results'] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className="flex items-center gap-1.5 rounded-full px-4 py-2 text-[13.5px] border transition"
+            style={{
+              background: tab === t ? `${TEAL}18` : 'transparent',
+              borderColor: tab === t ? `${TEAL}55` : 'rgba(255,255,255,.12)',
+              color: tab === t ? TEAL : 'rgba(255,255,255,.6)',
+            }}
+          >
+            {t === 'roles' ? <SlidersHorizontal className="w-3.5 h-3.5" /> : <Users className="w-3.5 h-3.5" />}
+            {t === 'roles' ? `Roles (${roles.length})` : `Candidates (${results.length})`}
+          </button>
+        ))}
+        {busy && <Loader2 className="w-4 h-4 animate-spin text-white/30 self-center ml-2" />}
+      </div>
+
+      {err && <Banner tone="bad">{err}</Banner>}
+
+      {tab === 'roles' && (
+        <>
+          <button
+            onClick={() => setEditing(blankRole())}
+            className="mt-6 flex items-center gap-2 rounded-full px-5 py-2.5 font-semibold text-[#04121a] transition hover:brightness-110"
+            style={{ background: `linear-gradient(110deg, ${TEAL}, ${BLUE})` }}
+          >
+            <Plus className="w-4 h-4" /> New role
+          </button>
+
+          {roles.length === 0 && !busy && (
+            <div className="mt-8 rounded-2xl border border-white/[0.09] p-8 text-center" style={{ background: 'rgba(255,255,255,.02)' }}>
+              <div className="font-podium text-xl uppercase">No roles yet</div>
+              <p className="text-white/45 mt-2 max-w-md mx-auto leading-relaxed">
+                A role is one assessment: a task, your documents, your rubric, and a link you send.
+                Start from a built-in task and paste one of your real policies into it.
+              </p>
+            </div>
+          )}
+
+          <div className="mt-5 space-y-3">
+            {roles.map((r) => {
+              const link = `${origin}/?invite=${r.invite}`
+              return (
+                <div key={r.id} className="rounded-2xl border border-white/[0.09] p-5" style={{ background: 'rgba(255,255,255,.02)' }}>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <div className="font-podium text-lg uppercase">{r.name}</div>
+                    <span className="text-[11px] uppercase tracking-widest px-2 py-0.5 rounded-full bg-white/[0.06] text-white/45">
+                      {r.kind === 'custom' ? 'custom task' : r.task_id}
+                    </span>
+                    {!r.active && (
+                      <span className="text-[11px] uppercase tracking-widest px-2 py-0.5 rounded-full" style={{ background: `${RED}18`, color: RED }}>
+                        paused
+                      </span>
+                    )}
+                    <div className="ml-auto flex items-center gap-2">
+                      <button onClick={() => setEditing(r)} className="text-[13px] text-white/50 hover:text-white transition">
+                        Edit
+                      </button>
+                      <button onClick={() => r.id && removeRole(r.id)} className="text-white/25 hover:text-[#ff5470] transition">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-4 mt-2.5 text-[12px] text-white/35" style={{ fontFamily: mono }}>
+                    <span>{r.docs.length} own docs</span>
+                    <span>{(r.budget_tokens / 1000).toFixed(0)}k tokens</span>
+                    <span>{Math.round(r.budget_seconds / 60)}m</span>
+                    <span>pass {r.rubric?.passMark ?? 70}</span>
+                  </div>
+
+                  <div className="flex items-center gap-2 mt-3.5 rounded-xl border border-white/10 bg-black/25 px-3 py-2">
+                    <Link2 className="w-3.5 h-3.5 text-white/30 shrink-0" />
+                    <span className="flex-1 truncate text-[12.5px] text-white/55" style={{ fontFamily: mono }}>
+                      {link}
+                    </span>
+                    <button onClick={() => copy(link, r.id || '')} className="shrink-0 text-white/40 hover:text-white transition">
+                      {copied === r.id ? <Check className="w-4 h-4" style={{ color: TEAL }} /> : <Copy className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {companyId && (
+            <div className="mt-10 rounded-2xl border border-white/[0.09] p-5" style={{ background: 'rgba(255,255,255,.02)' }}>
+              <div className="text-[11px] uppercase tracking-widest text-white/40 mb-2">Embed your scoreboard</div>
+              <p className="text-white/45 text-[13.5px] mb-3">
+                Drop this on your careers page. Shows first names and scores only.
+              </p>
+              <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/25 px-3 py-2">
+                <span className="flex-1 truncate text-[12px] text-white/50" style={{ fontFamily: mono }}>
+                  {`<iframe src="${origin}/widget?c=${companyId}" width="100%" height="320" style="border:0;border-radius:16px"></iframe>`}
+                </span>
+                <button
+                  onClick={() =>
+                    copy(
+                      `<iframe src="${origin}/widget?c=${companyId}" width="100%" height="320" style="border:0;border-radius:16px"></iframe>`,
+                      'embed'
+                    )
+                  }
+                  className="shrink-0 text-white/40 hover:text-white transition"
+                >
+                  {copied === 'embed' ? <Check className="w-4 h-4" style={{ color: TEAL }} /> : <Copy className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+          )}
         </>
       )}
+
+      {tab === 'results' && (
+        <div className="mt-6">
+          {results.length === 0 && !busy && (
+            <div className="rounded-2xl border border-white/[0.09] p-8 text-center" style={{ background: 'rgba(255,255,255,.02)' }}>
+              <div className="font-podium text-xl uppercase">Nothing back yet</div>
+              <p className="text-white/45 mt-2">Send a role link to a candidate and their session lands here.</p>
+            </div>
+          )}
+          <div className="space-y-2">
+            {results.map((r) => (
+              <button
+                key={r.id}
+                onClick={() => setOpenResult(r)}
+                className="w-full text-left rounded-xl border border-white/[0.09] p-4 hover:bg-white/[0.03] transition flex items-center gap-4"
+                style={{ background: 'rgba(255,255,255,.02)' }}
+              >
+                <div
+                  className="w-11 h-11 rounded-xl flex items-center justify-center font-bold tabular-nums shrink-0"
+                  style={{
+                    background: r.passed ? `${TEAL}16` : `${RED}14`,
+                    color: r.passed ? TEAL : RED,
+                    fontFamily: mono,
+                  }}
+                >
+                  {r.score ?? '—'}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[14.5px] truncate">{r.candidate_name || r.candidate_email || 'Anonymous'}</div>
+                  <div className="text-white/40 text-[12.5px] truncate">
+                    {r.role_name || 'Assessment'} · {r.verdict || '—'}
+                  </div>
+                </div>
+                <div className="text-white/25 text-[11.5px] shrink-0 hidden sm:block" style={{ fontFamily: mono }}>
+                  {new Date(r.created_at).toLocaleDateString()}
+                </div>
+                <Eye className="w-4 h-4 text-white/25 shrink-0" />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {openResult && <ResultModal r={openResult} onClose={() => setOpenResult(null)} />}
+    </Shell>
+  )
+}
+
+/* ═══════════════════════════ pieces ═══════════════════════════ */
+
+function Shell({ children }: { children: ReactNode }) {
+  return (
+    <div className="min-h-screen text-[#eaf4fa]">
+      <link rel="stylesheet" href="https://db.onlinewebfonts.com/c/8b75d9dcff6a48c35a46656192adf019?family=FSP+DEMO+-+PODIUM+Sharp+4.11" />
+      <style>{`.font-podium{font-family:"FSP DEMO - PODIUM Sharp 4.11", var(--font-sans), system-ui, sans-serif;}`}</style>
+      <div
+        className="pointer-events-none fixed inset-0 -z-10"
+        style={{ background: `radial-gradient(800px 500px at 12% -8%, ${TEAL}14, transparent 60%), radial-gradient(700px 420px at 88% 4%, ${BLUE}10, transparent 58%)` }}
+      />
+      <nav className="flex items-center gap-4 px-5 sm:px-8 py-5 max-w-5xl mx-auto">
+        <Link href="/" className="font-podium text-xl uppercase tracking-wider">
+          Judgemynt
+        </Link>
+        <span className="text-white/25">/</span>
+        <span className="text-white/50 text-[13.5px]">Employers</span>
+      </nav>
+      <main className="max-w-5xl mx-auto px-5 sm:px-8 pb-20">{children}</main>
+    </div>
+  )
+}
+
+function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+  return (
+    <div className="mt-8">
+      <div className="text-[11px] uppercase tracking-widest text-white/45">{label}</div>
+      {hint && <p className="text-white/35 text-[13px] mt-1 mb-3 leading-relaxed max-w-2xl">{hint}</p>}
+      <div className={hint ? '' : 'mt-3'}>{children}</div>
+    </div>
+  )
+}
+
+function Num({
+  label, value, min, max, step, onChange,
+}: { label: string; value: number; min: number; max: number; step: number; onChange: (v: number) => void }) {
+  return (
+    <label className="rounded-xl border border-white/10 px-3.5 py-2.5 bg-white/[0.02] flex items-center gap-3">
+      <span className="text-[13px] text-white/50 shrink-0">{label}</span>
+      <input
+        type="number"
+        value={value}
+        min={min}
+        max={max}
+        step={step}
+        onChange={(e) => onChange(Math.max(min, Math.min(max, Number(e.target.value) || min)))}
+        className="flex-1 min-w-0 bg-transparent outline-none text-right tabular-nums"
+        style={{ fontFamily: mono }}
+      />
+    </label>
+  )
+}
+
+function Banner({ tone, children }: { tone: 'bad' | 'ok'; children: ReactNode }) {
+  const c = tone === 'bad' ? RED : TEAL
+  return (
+    <div className="mt-4 rounded-xl border px-4 py-2.5 text-[13.5px] flex items-center gap-2" style={{ background: `${c}0d`, borderColor: `${c}35`, color: c }}>
+      <AlertTriangle className="w-4 h-4 shrink-0" /> {children}
+    </div>
+  )
+}
+
+function ResultModal({ r, onClose }: { r: Result; onClose: () => void }) {
+  const [showTranscript, setShowTranscript] = useState(false)
+  const dims = useMemo(() => Object.entries(r.dimensions || {}), [r.dimensions])
+
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [onClose])
+
+  return (
+    <div className="fixed inset-0 z-[70] bg-black/85 backdrop-blur-sm flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}>
+      <div
+        className="w-full max-w-2xl rounded-2xl border my-8"
+        style={{ background: '#080f18', borderColor: 'rgba(255,255,255,.12)' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-white/10">
+          <div
+            className="w-12 h-12 rounded-xl flex items-center justify-center font-bold text-lg tabular-nums"
+            style={{ background: r.passed ? `${TEAL}16` : `${RED}14`, color: r.passed ? TEAL : RED, fontFamily: mono }}
+          >
+            {r.score ?? '—'}
+          </div>
+          <div className="min-w-0">
+            <div className="font-semibold leading-tight truncate">{r.candidate_name || 'Anonymous'}</div>
+            <div className="text-white/40 text-[12.5px] truncate">
+              {r.candidate_email} · {r.role_name || 'Assessment'}
+            </div>
+          </div>
+          <button onClick={onClose} className="ml-auto text-white/40 hover:text-white transition">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="px-5 py-5 space-y-6">
+          <div className="flex items-center gap-3 flex-wrap text-[12px] text-white/40" style={{ fontFamily: mono }}>
+            <span>{r.verdict}</span>
+            {r.model && <span>· {r.model}</span>}
+            {r.tokens_used !== null && <span>· {r.tokens_used} tokens</span>}
+            {r.seconds_used !== null && <span>· {Math.round((r.seconds_used || 0) / 60)}m</span>}
+            {r.ended_by && r.ended_by !== 'submit' && <span style={{ color: RED }}>· ran out of {r.ended_by}</span>}
+          </div>
+
+          {dims.length > 0 && (
+            <div className="space-y-2.5">
+              {dims.map(([k, v]) => (
+                <div key={k}>
+                  <div className="flex justify-between text-[12.5px] mb-1">
+                    <span className="text-white/60 capitalize">{k}</span>
+                    <span className="tabular-nums text-white/50" style={{ fontFamily: mono }}>{v}</span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-white/[0.07] overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width: `${v}%`, background: v >= 70 ? TEAL : v >= 45 ? '#f59e0b' : RED }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!!r.traps?.length && (
+            <div>
+              <div className="text-[11px] uppercase tracking-widest text-white/40 mb-2.5">What they caught</div>
+              <div className="space-y-2">
+                {r.traps.map((t) => (
+                  <div key={t.id} className="flex gap-2.5 text-[13.5px]">
+                    <span className="mt-0.5 shrink-0" style={{ color: t.resolved ? TEAL : RED }}>
+                      {t.resolved ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
+                    </span>
+                    <div>
+                      <div className="text-white/80">{t.name}</div>
+                      {t.note && <div className="text-white/40 text-[12.5px] mt-0.5">{t.note}</div>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {!!r.signals?.notes?.length && (
+            <div>
+              <div className="text-[11px] uppercase tracking-widest text-white/40 mb-2">How they worked</div>
+              <ul className="space-y-1">
+                {r.signals.notes.map((n, i) => (
+                  <li key={i} className="text-white/55 text-[13px] flex gap-2">
+                    <span className="text-white/20">·</span> {n}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {r.analysis && (
+            <div>
+              <div className="text-[11px] uppercase tracking-widest text-white/40 mb-2">Examiner</div>
+              <p className="text-white/70 text-[13.5px] leading-relaxed">{r.analysis}</p>
+            </div>
+          )}
+
+          {r.hire && (
+            <div className="rounded-xl border p-4" style={{ background: `${TEAL}0a`, borderColor: `${TEAL}30` }}>
+              <div className="text-[11px] uppercase tracking-widest mb-1.5" style={{ color: TEAL }}>The call</div>
+              <p className="text-white/85 text-[14px] leading-relaxed">{r.hire}</p>
+            </div>
+          )}
+
+          {!!r.transcript?.length && (
+            <div>
+              <button
+                onClick={() => setShowTranscript((s) => !s)}
+                className="flex items-center gap-1.5 text-[13px] text-white/50 hover:text-white transition"
+              >
+                <ChevronDown className={`w-4 h-4 transition ${showTranscript ? 'rotate-180' : ''}`} />
+                {showTranscript ? 'Hide' : 'Show'} full session ({r.transcript.length} messages)
+              </button>
+              {showTranscript && (
+                <div className="mt-3 space-y-2.5 max-h-[50vh] overflow-y-auto rounded-xl border border-white/[0.08] bg-black/25 p-3.5">
+                  {r.transcript.map((m, i) => (
+                    <div key={i}>
+                      <div className="text-[10px] uppercase tracking-widest text-white/30 mb-0.5" style={{ fontFamily: mono }}>
+                        {m.role === 'user' ? 'candidate' : m.role}
+                      </div>
+                      <div className="text-[13px] text-white/70 whitespace-pre-wrap leading-relaxed">{m.content}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
