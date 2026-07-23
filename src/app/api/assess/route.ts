@@ -60,10 +60,24 @@ function transcript(history: Msg[], cap: number): string {
 
 type GeminiResult = { ok: true; text: string } | { ok: false; why: string }
 
+/* A real chat turn. The assistant is called with the conversation in the
+   role-separated format models are actually trained on; flattening the chat
+   into one prompt made weak models treat "yo" as an instruction to produce
+   the deliverable, because the task block dominated the context. */
+export interface ChatTurn {
+  role: 'user' | 'assistant'
+  content: string
+}
+
 /** Returns the reply text, or a human-readable reason it could not.
  *  The reason reaches the UI: a misconfigured deployment should say exactly
  *  what is wrong instead of a generic "AI unavailable". */
-async function callGemini(prompt: string, tokens: number, temperature: number): Promise<GeminiResult> {
+async function callGemini(
+  system: string | null,
+  turns: ChatTurn[],
+  tokens: number,
+  temperature: number
+): Promise<GeminiResult> {
   const key = process.env.GEMINI_API_KEY
   if (!key) {
     return { ok: false, why: 'This deployment has no GEMINI_API_KEY set. Add it to the environment variables and redeploy.' }
@@ -73,7 +87,8 @@ async function callGemini(prompt: string, tokens: number, temperature: number): 
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
+        ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
+        contents: turns.map((t) => ({ role: t.role === 'assistant' ? 'model' : 'user', parts: [{ text: t.content }] })),
         // gemini-2.5-flash is a thinking model; thinking off so output tokens
         // go to the JSON we asked for rather than to internal reasoning.
         generationConfig: { maxOutputTokens: tokens, temperature, thinkingConfig: { thinkingBudget: 0 } },
@@ -104,7 +119,12 @@ async function callGemini(prompt: string, tokens: number, temperature: number): 
    only runs when GROQ_API_KEY is set and Gemini has already failed. */
 const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile'
 
-async function callGroq(prompt: string, tokens: number, temperature: number): Promise<GeminiResult> {
+async function callGroq(
+  system: string | null,
+  turns: ChatTurn[],
+  tokens: number,
+  temperature: number
+): Promise<GeminiResult> {
   const key = process.env.GROQ_API_KEY
   if (!key) return { ok: false, why: 'No fallback provider is configured.' }
   try {
@@ -113,7 +133,10 @@ async function callGroq(prompt: string, tokens: number, temperature: number): Pr
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
       body: JSON.stringify({
         model: GROQ_MODEL,
-        messages: [{ role: 'user', content: prompt }],
+        messages: [
+          ...(system ? [{ role: 'system', content: system }] : []),
+          ...turns.map((t) => ({ role: t.role, content: t.content })),
+        ],
         max_tokens: tokens,
         temperature,
       }),
@@ -136,13 +159,38 @@ async function callGroq(prompt: string, tokens: number, temperature: number): Pr
 }
 
 /** Gemini first, Groq when Gemini cannot answer. Callers never know which. */
-async function callAI(prompt: string, tokens: number, temperature: number): Promise<GeminiResult> {
-  const primary = await callGemini(prompt, tokens, temperature)
+async function callAI(
+  system: string | null,
+  turns: ChatTurn[],
+  tokens: number,
+  temperature: number
+): Promise<GeminiResult> {
+  const primary = await callGemini(system, turns, tokens, temperature)
   if (primary.ok) return primary
-  const fallback = await callGroq(prompt, tokens, temperature)
+  const fallback = await callGroq(system, turns, tokens, temperature)
   if (fallback.ok) return fallback
   // Report the primary failure: it is the one worth fixing.
   return primary
+}
+
+/** Squeeze a raw client history into clean alternating chat turns: workspace
+ *  system banners dropped, consecutive same-role turns merged (Gemini rejects
+ *  them), leading assistant greeting removed so the thread starts with the
+ *  candidate. */
+function chatTurns(history: Msg[], latest: string): ChatTurn[] {
+  const turns: ChatTurn[] = []
+  for (const h of history.slice(-16)) {
+    if (h.role !== 'user' && h.role !== 'assistant') continue
+    const content = String(h.content || '').trim().slice(0, 6000)
+    if (!content) continue
+    const last = turns[turns.length - 1]
+    if (last && last.role === h.role) last.content += `\n\n${content}`
+    else turns.push({ role: h.role, content })
+  }
+  while (turns.length && turns[0].role === 'assistant') turns.shift()
+  const last = turns[turns.length - 1]
+  if (!last || last.role !== 'user') turns.push({ role: 'user', content: latest.slice(0, 6000) })
+  return turns
 }
 
 /** Load the role behind an invite token, falling back to the catalog default. */
@@ -219,34 +267,29 @@ export async function POST(req: NextRequest) {
     if (!message.trim()) return NextResponse.json({ error: 'Empty message.' }, { status: 400 })
 
     const resolved = await roleFor(body.token as string, body.taskId as string)
-    const hist = transcript(history.slice(-14), 6000)
 
     // The assistant is a PURE, full-capability AI: no muzzle, no forced
     // brevity, no behavioural rules. The exam still works because the AI only
     // knows what the candidate feeds it, and getting the right context in
     // front of it is exactly the skill being graded. The examiner separately
     // refuses credit for anything the AI raised that the candidate ignored.
-    const prompt = `You are "${m.tag}", ${m.persona}. You are the AI assistant in a live work session; the person chose you as their assistant for this task. Behave exactly as you would in a normal chat: answer what they say, do the work they ask for, and do it at the highest quality you are capable of.
+    // The conversation goes over as real role-separated chat turns, so the
+    // model responds to "yo" like a chat and to instructions like work.
+    const system = `You are "${m.tag}", ${m.persona}. You are the AI assistant in a live work session; the person you are talking to chose you as their assistant while they work on the task below. Behave exactly as you would in any normal chat, at the highest quality you are capable of.
 
-THE TASK THEY ARE WORKING ON:
+Background on what they are working on, for context when they ask for help:
+
+THE TASK:
 ${resolved.brief}
 
 WHAT THEY MUST DELIVER:
 ${resolved.deliverable}
 
-CONVERSATION SO FAR:
-${hist || '(none yet)'}
-
-THEIR NEW MESSAGE:
-${message}
-
-One formatting note: never use em dashes; use commas, colons, or separate sentences instead.
-
-Reply as the assistant now.`
+One formatting note: never use em dashes; use commas, colons, or separate sentences instead.`
 
     // 2048 output tokens: quality needs headroom, and length already prices
     // itself in, since a longer reply costs the candidate more budget.
-    const r = await callAI(prompt, 2048, 0.55)
+    const r = await callAI(system, chatTurns(history, message), 2048, 0.55)
     if (!r.ok) return NextResponse.json({ error: r.why }, { status: 502 })
     const cost = Math.ceil((estTokens(message) + estTokens(r.text)) * m.mult) + 40
     return NextResponse.json({ reply: r.text, tokensUsed: cost, model: m.tag })
@@ -365,7 +408,7 @@ Return ONLY raw JSON, no markdown:
   "hire": "<one line: would you trust them with real work alongside AI, and why>"
 }${traps.length ? `\nThe "traps" array must contain exactly ${traps.length} objects, one per trap, using the exact ids given above.` : ''}`
 
-    const raw = await callAI(prompt, 1800, 0.25)
+    const raw = await callAI(null, [{ role: 'user', content: prompt }], 1800, 0.25)
     if (!raw.ok) return NextResponse.json({ error: raw.why }, { status: 502 })
     const p = extractJson(raw.text)
     if (!p) return NextResponse.json({ error: 'The examiner returned malformed output. Submit again.' }, { status: 502 })
