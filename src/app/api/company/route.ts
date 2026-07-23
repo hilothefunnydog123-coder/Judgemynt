@@ -15,7 +15,8 @@ import { rateLimit } from '@/lib/ratelimit'
 import { admin, companyFromAuth, encodeInvite } from '@/lib/db'
 import { roleProblems, sanitizeRole, resolveRole, publicRole, type Role } from '@/lib/roles'
 import { DIMENSION_LIBRARY, DEFAULT_RUBRIC } from '@/lib/rubric'
-import { TASKS } from '@/lib/tasks'
+import { TASKS, taskById } from '@/lib/tasks'
+import { computeBenchmark, type Difficulty } from '@/lib/benchmark'
 
 const unauth = () => NextResponse.json({ error: 'Sign in as a company.' }, { status: 401 })
 const nodb = () =>
@@ -151,7 +152,28 @@ export async function POST(req: NextRequest) {
       .eq('company_id', company.id)
       .maybeSingle()
     if (!data) return NextResponse.json({ error: 'Not found.' }, { status: 404 })
-    return NextResponse.json({ result: data })
+    /* Live percentile against the CURRENT pool. The stored `percentiles`
+       snapshot was true only at grading time; an employer comparing today's
+       applicants wants today's rank, and role scope is this company's own pool.
+       Falls back to the stored snapshot if the recompute fails. */
+    let benchmark: unknown = (data as { percentiles?: unknown }).percentiles ?? null
+    try {
+      const dims = ((data as { dimensions?: Record<string, number> }).dimensions || {}) as Record<string, number>
+      const labelById = Object.fromEntries(DIMENSION_LIBRARY.map((d) => [d.id, d.label]))
+      const dimensionLabels = Object.keys(dims).map((id) => ({ id, label: labelById[id] || id }))
+      const difficulty = (taskById(String(data.task_id || ''))?.difficulty || 'core') as Difficulty
+      benchmark = await computeBenchmark(db, {
+        taskId: String(data.task_id || ''),
+        roleId: data.role_id ? String(data.role_id) : null,
+        difficulty,
+        overall: Number(data.score) || 0,
+        dimensions: dims,
+        dimensionLabels,
+      })
+    } catch {
+      /* keep the stored snapshot */
+    }
+    return NextResponse.json({ result: data, benchmark })
   }
 
   return NextResponse.json({ error: 'Unknown action.' }, { status: 400 })

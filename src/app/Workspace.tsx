@@ -68,6 +68,29 @@ interface TrapResult {
   note: string
 }
 
+interface ScopeDim {
+  id: string
+  label: string
+  skill: string
+  score: number
+  percentile: number
+  confident: boolean
+}
+interface ScopeBenchmark {
+  scope: 'task' | 'role'
+  sample: number
+  confident: boolean
+  percentileOverall: number
+  dimensionPercentiles: Record<string, number>
+  dimensions: ScopeDim[]
+  top: { id: string; label: string; skill: string; percentile: number }
+}
+interface Benchmark {
+  primary: 'task' | 'role' | null
+  task: ScopeBenchmark | null
+  role: ScopeBenchmark | null
+}
+
 interface Grade {
   overall: number
   passed: boolean
@@ -80,7 +103,23 @@ interface Grade {
   signals: { notes: string[]; docsOpened: number; docsAvailable: number; turns: number; medianThinkTime: number }
   analysis: string
   hire: string
+  benchmark?: Benchmark | null
   credential?: { id: string; url: string } | null
+}
+
+/** "Top 8%" above the median, an honest ordinal at or below it. */
+function topPct(rank: number): number {
+  return Math.max(1, Math.min(99, 100 - Math.round(rank)))
+}
+function ordinalPct(n: number): string {
+  const r = Math.round(n)
+  const v = r % 100
+  const s = ['th', 'st', 'nd', 'rd']
+  return `${r}${s[(v - 20) % 10] || s[v] || s[0]}`
+}
+function percentilePhrase(rank: number, skill?: string): string {
+  const at = skill ? ` at ${skill}` : ''
+  return rank >= 50 ? `Top ${topPct(rank)}%${at}` : `${ordinalPct(rank)} percentile${at}`
 }
 
 export default function Workspace({
@@ -614,11 +653,24 @@ export default function Workspace({
               <div className="text-white font-semibold text-sm mt-1">{cfg?.title}</div>
             </div>
 
-            {/* dimensions */}
+            {/* the benchmark: where they rank, not just what they scored */}
+            <BenchmarkHero benchmark={grade.benchmark} />
+
+            {/* dimensions, each with its percentile when the pool is deep enough */}
             <div className="mt-9 space-y-3">
-              {grade.dimensionLabels.map((d) => (
-                <Bar key={d.id} label={d.label} value={grade.dimensions[d.id] ?? 0} accent={accent} />
-              ))}
+              {grade.dimensionLabels.map((d) => {
+                const scope = grade.benchmark?.[grade.benchmark.primary || 'task']
+                const dim = scope?.dimensions?.find((x) => x.id === d.id)
+                return (
+                  <Bar
+                    key={d.id}
+                    label={d.label}
+                    value={grade.dimensions[d.id] ?? 0}
+                    accent={accent}
+                    rank={dim && dim.confident ? dim.percentile : undefined}
+                  />
+                )
+              })}
             </div>
 
             {/* traps — the part people screenshot */}
@@ -854,17 +906,54 @@ function Bubble({ msg, accent, modelTag, modelAccent }: { msg: Msg; accent: stri
   )
 }
 
-function Bar({ label, value, accent }: { label: string; value: number; accent: string }) {
+function Bar({ label, value, accent, rank }: { label: string; value: number; accent: string; rank?: number }) {
   const color = value >= 80 ? TEAL : value >= 55 ? accent : value >= 35 ? AMBER : RED
   return (
     <div>
       <div className="flex items-baseline justify-between mb-1.5">
         <span className="text-[13px] font-semibold text-white">{label}</span>
-        <span className="text-[13px] tabular-nums" style={{ fontFamily: mono, color }}>{value}</span>
+        <span className="flex items-baseline gap-2">
+          {rank !== undefined && (
+            <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: rank >= 50 ? TEAL : 'rgba(255,255,255,.6)' }}>
+              {percentilePhrase(rank)}
+            </span>
+          )}
+          <span className="text-[13px] tabular-nums" style={{ fontFamily: mono, color }}>{value}</span>
+        </span>
       </div>
       <div className="h-1.5 rounded-full bg-white/[0.07] overflow-hidden">
         <div className="h-full rounded-full transition-[width] duration-1000 ease-out" style={{ width: `${value}%`, background: color }} />
       </div>
+    </div>
+  )
+}
+
+/** The hero of the result screen: where the candidate ranks, the sentence the
+ *  credential is built on. Falls silent when there is no benchmark at all. */
+function BenchmarkHero({ benchmark }: { benchmark?: Benchmark | null }) {
+  if (!benchmark) return null
+  const scope = benchmark[benchmark.primary || 'task']
+  if (!scope) return null
+  const top = scope.top
+  // Withhold the boast until the pool is real; the score still stands.
+  const headline = scope.confident
+    ? percentilePhrase(top.percentile, top.skill)
+    : 'Ranking builds as more people take this'
+  return (
+    <div className="mt-7 rounded-2xl border p-5 text-center" style={{ background: `${TEAL}0a`, borderColor: `${TEAL}30` }}>
+      <div className="text-[11px] font-bold uppercase tracking-widest text-white/70">Your benchmark</div>
+      <div className="font-podium text-[clamp(1.5rem,5vw,2.2rem)] uppercase mt-1.5" style={{ color: scope.confident ? TEAL : '#ffffff' }}>
+        {headline}
+      </div>
+      {scope.confident ? (
+        <div className="text-white font-semibold text-[13.5px] mt-1.5">
+          Ranked against {scope.sample.toLocaleString()} {scope.sample === 1 ? 'person' : 'people'} who took the same simulation.
+        </div>
+      ) : (
+        <div className="text-white font-medium text-[13px] mt-1.5">
+          You scored {Math.round(scope.percentileOverall)} on our calibrated norm. A live percentile appears once enough people have taken this.
+        </div>
+      )}
     </div>
   )
 }

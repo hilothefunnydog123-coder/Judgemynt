@@ -18,11 +18,19 @@ import { NextRequest, NextResponse } from 'next/server'
 import { rateLimit } from '@/lib/ratelimit'
 import { gfetch } from '@/lib/gemini'
 import { admin, decodeInvite, profileFor, userFromAuth } from '@/lib/db'
-import { MODEL_BY_ID, TASKS } from '@/lib/tasks'
+import { MODEL_BY_ID, TASKS, taskById } from '@/lib/tasks'
 import { keyFor } from '@/lib/tasks.server'
 import { publicRole, resolveRole, type Role, type ResolvedRole } from '@/lib/roles'
 import { overallFrom, normalized } from '@/lib/rubric'
 import { deriveSignals, sanitizeTelemetry, signalsForPrompt } from '@/lib/telemetry'
+import {
+  computeBenchmark,
+  primaryScope,
+  summarizeScope,
+  PRACTICE_COMPANY_ID,
+  type Difficulty,
+  type ScopedBenchmark,
+} from '@/lib/benchmark'
 
 /* gemini-2.5-flash by default; set GEMINI_MODEL=gemini-2.5-flash-lite for a
    much higher free-tier daily request allowance at slightly lower quality. */
@@ -438,6 +446,36 @@ Return ONLY raw JSON, no markdown:
        result on a database that might not be configured. */
     const invite = body.token ? decodeInvite(String(body.token)) : null
     const db = admin()
+
+    /* ── The percentile benchmark ─────────────────────────────────────────
+       Every finished session, invited or practice, pass or fail, is ranked
+       against its pool: the catalog task across all companies, and, when this
+       came through a role, that company's own applicants. Computed from the
+       EXISTING pool, before this row is written, so nobody is ranked against
+       themselves. Reused three ways below: stored on the result, frozen onto a
+       credential, and returned to the candidate. Never blocks the score.
+       Non-invite runs are always catalog tasks, so difficulty comes from the
+       catalog entry the session resolved to. */
+    const catalog = taskById(resolved.taskId)
+    const difficulty = (catalog?.difficulty || 'core') as Difficulty
+    let benchmarkResult: ScopedBenchmark | null = null
+    if (db) {
+      try {
+        benchmarkResult = await computeBenchmark(db, {
+          taskId: resolved.taskId,
+          roleId: resolved.roleId,
+          difficulty,
+          overall,
+          dimensions,
+          dimensionLabels: result.dimensionLabels,
+        })
+      } catch {
+        benchmarkResult = null
+      }
+    }
+    const benchScope = primaryScope(benchmarkResult)
+    const percentileOverall = benchScope?.percentileOverall ?? null
+
     if (invite && db) {
       try {
         const { data: stored } = await db
@@ -470,6 +508,11 @@ Return ONLY raw JSON, no markdown:
             analysis: result.analysis,
             hire: result.hire,
             transcript: history.slice(-80),
+            // Snapshot of the percentile as it stood at grading time: cheap to
+            // render and a record of what the candidate was shown. Employer
+            // surfaces can recompute live from the pool for a fresher rank.
+            percentile_overall: percentileOverall,
+            percentiles: benchmarkResult,
           })
           .select('id')
           .maybeSingle()
@@ -496,13 +539,80 @@ Return ONLY raw JSON, no markdown:
       } catch {
         /* table may predate this schema; the candidate still gets their score */
       }
+    } else if (!invite && db) {
+      /* A practice run. Record it, pass OR fail, into the distribution under a
+         sentinel company id so the task-scope benchmark reflects everyone who
+         has taken this catalog task, while staying invisible to every real
+         employer console, all of which filter judgemynt_results by their own
+         company_id. No transcript or contact details are kept for practice. */
+      try {
+        await db.from('judgemynt_results').insert({
+          company_id: PRACTICE_COMPANY_ID,
+          score: overall,
+          creativity: dimensions.direction ?? dimensions.judgment ?? null,
+          efficiency: dimensions.efficiency ?? null,
+          quality: dimensions.quality ?? null,
+          verdict: result.verdict,
+          role_id: null,
+          role_name: resolved.roleName,
+          task_id: resolved.taskId,
+          passed: result.passed,
+          pass_mark: rubric.passMark,
+          dimensions,
+          traps: trapResults,
+          signals,
+          tokens_used: tokensUsed,
+          tokens_budget: tokensBudget,
+          seconds_used: secondsUsed,
+          model: m.tag,
+          ended_by: reason,
+          percentile_overall: percentileOverall,
+          percentiles: benchmarkResult,
+        })
+      } catch {
+        /* schema may predate benchmarking; the score still stands */
+      }
     }
 
     /* A passed generic test earns a shareable credential the holder can put
-       on LinkedIn. Practice runs that fail earn nothing, on purpose. */
+       on LinkedIn. Practice runs that fail earn nothing, on purpose.
+
+       The credential is not a bare score. The benchmark engine turns this
+       session into a PERCENTILE, overall and per dimension, and the whole
+       thing is frozen onto the row so the public /credential/<id> page is a
+       tamper-evident view: the number the holder shares can never drift. */
     let credential: { id: string; url: string } | null = null
     if (!invite && db && result.passed) {
       try {
+        const category = resolved.role
+        // The pooled task-scope benchmark for this session. roleId is null on a
+        // practice run, so computeBenchmark returned task scope: seeded while
+        // the pool is small, empirical once it clears MIN_SAMPLE, so the
+        // credential always has its hero. Falls back to a seed-only ranking if
+        // the pooled compute failed, so the credential is never left blank.
+        const bench =
+          benchmarkResult?.task ||
+          summarizeScope(
+            'task',
+            resolved.taskId,
+            { taskId: resolved.taskId, difficulty, overall, dimensions, dimensionLabels: result.dimensionLabels },
+            []
+          )
+
+        // Cohort size: how many people have earned this exact credential. Shown
+        // as social proof, and a truthful count of the verified population.
+        // Best-effort; never blocks issuing the credential.
+        let cohort = 1
+        try {
+          const { count } = await db
+            .from('judgemynt_credentials')
+            .select('id', { count: 'exact', head: true })
+            .eq('task_id', resolved.taskId)
+          cohort = (count || 0) + 1
+        } catch {
+          /* count is a nicety, not a requirement */
+        }
+
         const { data: cred } = await db
           .from('judgemynt_credentials')
           .insert({
@@ -510,9 +620,24 @@ Return ONLY raw JSON, no markdown:
             holder_name: legalName || user.name || null,
             task_id: resolved.taskId,
             task_title: resolved.title,
+            category,
+            difficulty,
             score: overall,
             pass_mark: rubric.passMark,
             verdict: result.verdict,
+            model: m.tag,
+            time_limit: timeLimit,
+            tokens_budget: tokensBudget,
+            dimensions,
+            dimension_labels: result.dimensionLabels,
+            dimension_percentiles: bench.dimensionPercentiles,
+            percentile_overall: bench.percentileOverall,
+            top_dimension: bench.top.id,
+            top_dimension_label: bench.top.label,
+            top_dimension_skill: bench.top.skill,
+            top_dimension_percentile: bench.top.percentile,
+            sample_size: cohort,
+            issuer: 'Judgemynt',
           })
           .select('id')
           .maybeSingle()
@@ -524,7 +649,7 @@ Return ONLY raw JSON, no markdown:
       }
     }
 
-    return NextResponse.json({ ...result, credential })
+    return NextResponse.json({ ...result, benchmark: benchmarkResult, credential })
   }
 
   return NextResponse.json({ error: 'Unknown action.' }, { status: 400 })

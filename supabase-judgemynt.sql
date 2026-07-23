@@ -84,6 +84,25 @@ alter table judgemynt_results
 create index if not exists idx_jm_results_role
   on judgemynt_results (role_id, created_at desc);
 
+-- ── Percentile benchmarking (task-scope + role-scope pooling) ──────────────
+-- The benchmark engine ranks every finished session against its pool. The raw
+-- score and the per-dimension `dimensions` above ARE the pool, so history stays
+-- comparable; these two columns cache the rank computed at grading time.
+--   percentile_overall — the primary-scope overall rank, 1-99 (higher is
+--                        better; the shareable "top N%" is 100 minus this).
+--   percentiles        — the full benchmark snapshot: task and role scope,
+--                        overall and per-dimension ranks, sample sizes, and the
+--                        `confident` flag a surface uses to decide whether to
+--                        show the rank or say "not enough data yet".
+alter table judgemynt_results
+  add column if not exists percentile_overall int,
+  add column if not exists percentiles jsonb;
+
+-- Task-scope pooling reads every company's rows (plus practice runs) for one
+-- catalog task; role-scope pooling already rides idx_jm_results_role above.
+create index if not exists idx_jm_results_task
+  on judgemynt_results (task_id, created_at desc);
+
 -- ── Profiles: who a signed-in user is ─────────────────────────────────────
 -- Everyone who takes or gives a test has an account. A profile says which
 -- side of the marketplace they are on and what to call them.
@@ -180,3 +199,34 @@ create index if not exists idx_jm_credentials_user
   on judgemynt_credentials (user_id, created_at desc);
 
 alter table judgemynt_credentials enable row level security;
+
+-- ── A credential is a performance credential, not a bare score ─────────────
+-- These widen a credential from "passed, scored 82" into the viral artifact:
+-- a benchmarked PERCENTILE (overall and top dimension), the conditions it was
+-- earned under, and the full per-dimension rubric breakdown. Everything the
+-- benchmark engine computes is frozen onto the row at issue time, so the
+-- public /credential/<id> page can never drift from what was awarded.
+-- Additive and idempotent; safe to re-run. Percentile columns are RANKS
+-- (0-100, "scored at or above this share of the field"); the page renders the
+-- shareable "top N%" as 100 minus the rank.
+alter table judgemynt_credentials
+  add column if not exists category text,               -- role family, e.g. 'Software Engineering'
+  add column if not exists difficulty text,             -- 'core' | 'senior' | 'staff'
+  add column if not exists model text,                  -- the AI the candidate directed
+  add column if not exists time_limit int,              -- seconds allowed
+  add column if not exists tokens_budget int,           -- token budget for the session
+  -- The full rubric breakdown, so the credential shows how the score was made.
+  add column if not exists dimensions jsonb default '{}'::jsonb,        -- { dimId: score }
+  add column if not exists dimension_labels jsonb default '[]'::jsonb,  -- [{ id, label }]
+  add column if not exists dimension_percentiles jsonb default '{}'::jsonb, -- { dimId: rank }
+  -- The hero: benchmarked percentile rank overall and on the top dimension.
+  add column if not exists percentile_overall int,      -- overall percentile rank, 0-100
+  add column if not exists top_dimension text,          -- highest-ranked dimension id
+  add column if not exists top_dimension_label text,    -- its human label, e.g. 'Judgment'
+  add column if not exists top_dimension_skill text,    -- LinkedIn phrase, 'catching hidden operational risk'
+  add column if not exists top_dimension_percentile int,-- its percentile rank, 0-100
+  add column if not exists sample_size int,             -- verified holders of this credential (cohort)
+  add column if not exists issuer text default 'Judgemynt';
+
+create index if not exists idx_jm_credentials_task
+  on judgemynt_credentials (task_id, created_at desc);
