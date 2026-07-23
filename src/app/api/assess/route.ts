@@ -24,8 +24,10 @@ import { publicRole, resolveRole, type Role, type ResolvedRole } from '@/lib/rol
 import { overallFrom, normalized } from '@/lib/rubric'
 import { deriveSignals, sanitizeTelemetry, signalsForPrompt } from '@/lib/telemetry'
 
-const GEMINI_URL =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent'
+/* gemini-2.5-flash by default; set GEMINI_MODEL=gemini-2.5-flash-lite for a
+   much higher free-tier daily request allowance at slightly lower quality. */
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash'
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`
 
 interface Msg {
   role: string
@@ -95,6 +97,52 @@ async function callGemini(prompt: string, tokens: number, temperature: number): 
   } catch {
     return { ok: false, why: 'Could not reach the AI provider. Check the network and try again.' }
   }
+}
+
+/* Groq is the free fallback: OpenAI-compatible, no card required, and its
+   free tier survives long after Gemini's daily quota is gone. Optional; it
+   only runs when GROQ_API_KEY is set and Gemini has already failed. */
+const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile'
+
+async function callGroq(prompt: string, tokens: number, temperature: number): Promise<GeminiResult> {
+  const key = process.env.GROQ_API_KEY
+  if (!key) return { ok: false, why: 'No fallback provider is configured.' }
+  try {
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        model: GROQ_MODEL,
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: tokens,
+        temperature,
+      }),
+    })
+    if (!res.ok) {
+      let detail = ''
+      try {
+        const j = await res.json()
+        detail = String(j?.error?.message || '').slice(0, 200)
+      } catch {}
+      return { ok: false, why: `The fallback AI returned ${res.status}${detail ? `: ${detail}` : '.'}` }
+    }
+    const json = await res.json()
+    const text = String(json.choices?.[0]?.message?.content || '').trim()
+    if (!text) return { ok: false, why: 'The fallback AI returned no text. Try again.' }
+    return { ok: true, text }
+  } catch {
+    return { ok: false, why: 'Could not reach the fallback AI provider.' }
+  }
+}
+
+/** Gemini first, Groq when Gemini cannot answer. Callers never know which. */
+async function callAI(prompt: string, tokens: number, temperature: number): Promise<GeminiResult> {
+  const primary = await callGemini(prompt, tokens, temperature)
+  if (primary.ok) return primary
+  const fallback = await callGroq(prompt, tokens, temperature)
+  if (fallback.ok) return fallback
+  // Report the primary failure: it is the one worth fixing.
+  return primary
 }
 
 /** Load the role behind an invite token, falling back to the catalog default. */
@@ -201,7 +249,7 @@ Rules for you:
 
 Reply as the assistant now.`
 
-    const r = await callGemini(prompt, 1024, 0.55)
+    const r = await callAI(prompt, 1024, 0.55)
     if (!r.ok) return NextResponse.json({ error: r.why }, { status: 502 })
     const cost = Math.ceil((estTokens(message) + estTokens(r.text)) * m.mult) + 40
     return NextResponse.json({ reply: r.text, tokensUsed: cost, model: m.tag })
@@ -320,7 +368,7 @@ Return ONLY raw JSON, no markdown:
   "hire": "<one line: would you trust them with real work alongside AI, and why>"
 }${traps.length ? `\nThe "traps" array must contain exactly ${traps.length} objects, one per trap, using the exact ids given above.` : ''}`
 
-    const raw = await callGemini(prompt, 1800, 0.25)
+    const raw = await callAI(prompt, 1800, 0.25)
     if (!raw.ok) return NextResponse.json({ error: raw.why }, { status: 502 })
     const p = extractJson(raw.text)
     if (!p) return NextResponse.json({ error: 'The examiner returned malformed output. Submit again.' }, { status: 502 })
