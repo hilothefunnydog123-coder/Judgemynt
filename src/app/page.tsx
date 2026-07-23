@@ -15,7 +15,8 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowUpRight, Check, X, Clock, Zap, FileText, Loader2, Lock } from 'lucide-react'
 import Workspace from './Workspace'
-import { useAuth } from '@/hooks/useAuth'
+import Onboarding from '@/components/Onboarding'
+import { useProfile } from '@/hooks/useProfile'
 
 const TEAL = '#00d4aa'
 const RED = '#ff5470'
@@ -81,15 +82,20 @@ export default function Home() {
   const [held, setHeld] = useState(false)
   const [authError, setAuthError] = useState('')
 
-  const { user, signInWithGoogle, signOut, isLoggedIn } = useAuth()
+  const {
+    user, signInWithGoogle, signOut, isLoggedIn, loading,
+    profile, profileReady, saveProfile,
+  } = useProfile()
 
   async function googleSignIn() {
     setAuthError('')
     const r = await signInWithGoogle()
     if (r?.error) setAuthError(r.error)
   }
-  const meta = (user?.user_metadata || {}) as Record<string, string>
-  const displayName = meta.full_name || meta.first_name || user?.email?.split('@')[0] || ''
+
+  const legalName = profile ? [profile.first_name, profile.last_name].filter(Boolean).join(' ') : ''
+  const displayName =
+    legalName || profile?.company_name || user?.email?.split('@')[0] || ''
 
   useEffect(() => {
     fetch('/api/assess', {
@@ -103,11 +109,22 @@ export default function Home() {
   }, [])
 
   // An ?invite= link drops the candidate straight into their employer's role.
+  // The token is stashed in sessionStorage because signing in with Google
+  // round-trips the browser and comes back without the query string.
   useEffect(() => {
     try {
-      const t = new URLSearchParams(window.location.search).get('invite')
+      const t = new URLSearchParams(window.location.search).get('invite') || sessionStorage.getItem('jm_invite')
       if (t) {
+        sessionStorage.setItem('jm_invite', t)
         setInvite(t)
+        setStage('run')
+        return
+      }
+      // A picked practice task also survives the sign-in round-trip.
+      const picked = sessionStorage.getItem('jm_task')
+      if (picked !== null) {
+        sessionStorage.removeItem('jm_task')
+        setPicked(picked || undefined)
         setStage('run')
       }
     } catch {}
@@ -120,25 +137,80 @@ export default function Home() {
     return () => clearInterval(id)
   }, [held])
 
+  // Taking a test needs an account: the score becomes a credential or an
+  // application, and both belong to a person.
   function start(taskId?: string) {
     setPicked(taskId)
+    if (!isLoggedIn) {
+      try {
+        sessionStorage.setItem('jm_task', taskId || '')
+      } catch {}
+      googleSignIn()
+      return
+    }
     setStage('run')
   }
 
   if (stage === 'run') {
+    const exit = () => {
+      setStage('home')
+      setInvite(undefined)
+      // Drop ?invite= and the stash so a refresh does not restart the exam.
+      try {
+        sessionStorage.removeItem('jm_invite')
+        window.history.replaceState({}, '', window.location.pathname)
+      } catch {}
+    }
+
+    if (loading || !profileReady) {
+      return (
+        <div className="min-h-screen flex items-center justify-center text-white font-semibold gap-3">
+          <Loader2 className="w-5 h-5 animate-spin" /> Loading…
+        </div>
+      )
+    }
+
+    if (!isLoggedIn) {
+      return (
+        <div className="min-h-screen flex items-center justify-center px-5">
+          <FontLink />
+          <div className="max-w-md text-center">
+            <div className="font-podium text-3xl uppercase">Sign in to take your assessment</div>
+            <p className="text-white font-medium mt-3 leading-relaxed">
+              Your score becomes a credential or an application, so it has to belong to a real account.
+              Sign in and you will land right back here.
+            </p>
+            <button
+              onClick={googleSignIn}
+              className="mt-6 rounded-full px-7 py-3.5 font-bold text-[#04121a] hover:brightness-110 transition"
+              style={{ background: TEAL }}
+            >
+              Sign in with Google
+            </button>
+            {authError && <p className="mt-4 font-semibold" style={{ color: RED }}>{authError}</p>}
+            <button onClick={exit} className="block mx-auto mt-6 text-white font-semibold hover:text-[#00d4aa] transition text-sm">
+              Back to Judgemynt
+            </button>
+          </div>
+        </div>
+      )
+    }
+
+    if (!profile) {
+      return (
+        <div className="min-h-screen">
+          <FontLink />
+          <Onboarding onSave={saveProfile} onDone={() => {}} />
+        </div>
+      )
+    }
+
     return (
       <Workspace
-        onExit={() => {
-          setStage('home')
-          setInvite(undefined)
-          // Drop ?invite= so a refresh does not silently restart the exam.
-          try {
-            window.history.replaceState({}, '', window.location.pathname)
-          } catch {}
-        }}
+        onExit={exit}
         inviteToken={invite}
         taskId={picked}
-        candidate={displayName ? { name: displayName, email: user?.email || '' } : undefined}
+        candidate={{ name: legalName || displayName, email: profile.email || user?.email || '' }}
       />
     )
   }
@@ -154,7 +226,7 @@ export default function Home() {
         <span className="font-podium text-xl sm:text-2xl uppercase tracking-wider">Judgemynt</span>
         <div className="ml-auto flex items-center gap-3 sm:gap-5 text-[13.5px]">
           <a href="#tasks" className="text-white font-semibold hover:text-[#00d4aa] transition hidden sm:block">Tasks</a>
-          <a href="#how" className="text-white font-semibold hover:text-[#00d4aa] transition hidden sm:block">How it works</a>
+          <Link href="/marketplace" className="text-white font-semibold hover:text-[#00d4aa] transition">Marketplace</Link>
           <Link href="/employers" className="text-white font-semibold hover:text-[#00d4aa] transition">For employers</Link>
           {isLoggedIn ? (
             <button onClick={signOut} className="text-white font-semibold hover:text-[#00d4aa] transition">

@@ -750,6 +750,9 @@ function Shell({ children }: { children: ReactNode }) {
         </Link>
         <span className="text-white/40">/</span>
         <span className="text-white font-semibold text-[13.5px]">Employers</span>
+        <Link href="/marketplace" className="ml-auto text-white font-semibold hover:text-[#00d4aa] text-[13.5px] transition">
+          Marketplace
+        </Link>
       </nav>
       <main className="max-w-5xl mx-auto px-5 sm:px-8 pb-20">{children}</main>
     </div>

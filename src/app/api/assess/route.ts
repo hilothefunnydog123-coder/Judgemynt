@@ -17,7 +17,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { rateLimit } from '@/lib/ratelimit'
 import { gfetch } from '@/lib/gemini'
-import { admin, decodeInvite } from '@/lib/db'
+import { admin, decodeInvite, profileFor, userFromAuth } from '@/lib/db'
 import { MODEL_BY_ID, TASKS } from '@/lib/tasks'
 import { keyFor } from '@/lib/tasks.server'
 import { publicRole, resolveRole, type Role, type ResolvedRole } from '@/lib/roles'
@@ -209,6 +209,15 @@ Reply as the assistant now.`
 
   /* ── grade the session ──────────────────────────────────────────────── */
   if (action === 'evaluate') {
+    // Taking the test requires an account: the score lands on a real person,
+    // whether it becomes a credential or a marketplace application.
+    const user = await userFromAuth(req)
+    if (!user) {
+      return NextResponse.json({ error: 'Sign in to be graded. Your session is kept on screen.' }, { status: 401 })
+    }
+    const profile = await profileFor(user.id)
+    const legalName = profile ? [profile.first_name, profile.last_name].filter(Boolean).join(' ') : ''
+
     const history = (body.history as Msg[]) || []
     const m = MODEL_BY_ID[String(body.model)] || MODEL_BY_ID.gpt
     const resolved = await roleFor(body.token as string, body.taskId as string)
@@ -352,15 +361,16 @@ Return ONLY raw JSON, no markdown:
     /* Store it if this was an invited assessment. Never block the candidate's
        result on a database that might not be configured. */
     const invite = body.token ? decodeInvite(String(body.token)) : null
-    if (invite) {
-      const db = admin()
-      if (db) {
-        try {
-          await db.from('judgemynt_results').insert({
+    const db = admin()
+    if (invite && db) {
+      try {
+        const { data: stored } = await db
+          .from('judgemynt_results')
+          .insert({
             company_id: invite.companyId,
             company_name: (body.company_name as string) || null,
-            candidate_name: (body.candidate_name as string) || null,
-            candidate_email: (body.candidate_email as string) || null,
+            candidate_name: legalName || (body.candidate_name as string) || null,
+            candidate_email: user.email || (body.candidate_email as string) || null,
             score: overall,
             // Legacy columns kept populated so the embeddable widget and any
             // existing dashboards keep rendering after the rubric change.
@@ -385,13 +395,60 @@ Return ONLY raw JSON, no markdown:
             hire: result.hire,
             transcript: history.slice(-80),
           })
-        } catch {
-          /* table may predate this schema; the candidate still gets their score */
+          .select('id')
+          .maybeSingle()
+
+        /* A marketplace application took this test: land the score on it. The
+           candidate on the application must be the signed-in user, so nobody
+           can overwrite someone else's application by guessing a token. */
+        if (invite.applicationId) {
+          await db
+            .from('judgemynt_applications')
+            .update({
+              score: overall,
+              status: 'assessed',
+              result_id: stored?.id || null,
+              candidate_name: legalName || null,
+              candidate_email: user.email || null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', invite.applicationId)
+            .eq('company_id', invite.companyId)
+            .eq('candidate_id', user.id)
+            .eq('status', 'applied')
         }
+      } catch {
+        /* table may predate this schema; the candidate still gets their score */
       }
     }
 
-    return NextResponse.json(result)
+    /* A passed generic test earns a shareable credential the holder can put
+       on LinkedIn. Practice runs that fail earn nothing, on purpose. */
+    let credential: { id: string; url: string } | null = null
+    if (!invite && db && result.passed) {
+      try {
+        const { data: cred } = await db
+          .from('judgemynt_credentials')
+          .insert({
+            user_id: user.id,
+            holder_name: legalName || user.name || null,
+            task_id: resolved.taskId,
+            task_title: resolved.title,
+            score: overall,
+            pass_mark: rubric.passMark,
+            verdict: result.verdict,
+          })
+          .select('id')
+          .maybeSingle()
+        if (cred?.id) {
+          credential = { id: cred.id, url: `${new URL(req.url).origin}/credential/${cred.id}` }
+        }
+      } catch {
+        /* schema may predate credentials; the score still stands */
+      }
+    }
+
+    return NextResponse.json({ ...result, credential })
   }
 
   return NextResponse.json({ error: 'Unknown action.' }, { status: 400 })

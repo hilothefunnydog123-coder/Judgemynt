@@ -81,12 +81,16 @@ src/lib/rubric.ts         dimensions, weights, pass marks
 src/lib/telemetry.ts      process signals derived from workspace events
 src/lib/db.ts             service-role access + invite token encoding
 
-src/app/page.tsx          landing + task picker
+src/app/page.tsx          landing + task picker (sign-in gated)
 src/app/Workspace.tsx     the assessment: brief → run → result
 src/app/employers/        role builder, candidate results, transcripts
+src/app/marketplace/      job board, applications, decisions, DM threads
+src/app/credential/       public verifiable credential pages
 src/app/widget/           embeddable scoreboard
 src/app/api/assess/       task resolution, the AI, and grading
 src/app/api/company/      role CRUD, invites, results
+src/app/api/marketplace/  jobs, applications, accept/reject emails, messages
+src/app/api/profile/      candidate/employer onboarding profiles
 ```
 
 Next.js App Router, React 19, Tailwind 4, TypeScript. Six runtime dependencies.

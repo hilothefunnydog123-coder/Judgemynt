@@ -15,10 +15,11 @@ import {
 } from 'react'
 import {
   ChevronLeft, Clock, Zap, CornerDownLeft, FileText, X, Check,
-  AlertTriangle, Loader2, Eye, Send, Gauge,
+  AlertTriangle, Loader2, Eye, Send, Gauge, Award, ExternalLink,
 } from 'lucide-react'
 import type { JmDoc } from '@/lib/tasks'
 import type { TelemetryEvent } from '@/lib/telemetry'
+import { useAuth } from '@/hooks/useAuth'
 
 const TEAL = '#00d4aa'
 const RED = '#ff5470'
@@ -79,6 +80,7 @@ interface Grade {
   signals: { notes: string[]; docsOpened: number; docsAvailable: number; turns: number; medianThinkTime: number }
   analysis: string
   hire: string
+  credential?: { id: string; url: string } | null
 }
 
 export default function Workspace({
@@ -92,6 +94,7 @@ export default function Workspace({
   taskId?: string
   candidate?: { name: string; email: string }
 }) {
+  const { getToken } = useAuth()
   const [phase, setPhase] = useState<'brief' | 'run' | 'result'>('brief')
   const [cfg, setCfg] = useState<TaskConfig | null>(null)
   const [models, setModels] = useState<ModelOpt[]>([])
@@ -200,9 +203,13 @@ export default function Workspace({
     setGradeError('')
     setPhase('result')
     try {
+      const authToken = await getToken()
       const res = await fetch('/api/assess', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        },
         body: JSON.stringify({
           action: 'evaluate',
           token: inviteToken,
@@ -696,6 +703,45 @@ export default function Workspace({
               <div className="mt-4 rounded-xl border p-5" style={{ background: `${accent}0a`, borderColor: `${accent}30` }}>
                 <div className="text-[11px] font-bold uppercase tracking-widest mb-2" style={{ color: accent }}>The call</div>
                 <p className="text-white font-semibold leading-relaxed">{grade.hire}</p>
+              </div>
+            )}
+
+            {/* a passed practice run mints a credential worth showing off */}
+            {grade.credential && (
+              <div className="mt-4 rounded-xl border p-5" style={{ background: `${TEAL}0a`, borderColor: `${TEAL}40` }}>
+                <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest mb-2" style={{ color: TEAL }}>
+                  <Award className="w-4 h-4" /> Credential earned
+                </div>
+                <p className="text-white font-medium leading-relaxed text-[14px]">
+                  You passed, so this session is now a verifiable credential. The link below is public
+                  and shows your name, this task, and your score. Put it on your profile.
+                </p>
+                <div className="mt-3 rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-[12px] font-medium text-white break-all" style={{ fontFamily: mono }}>
+                  {grade.credential.url}
+                </div>
+                <div className="flex flex-wrap gap-3 mt-4">
+                  <a
+                    href={`https://www.linkedin.com/profile/add?startTask=CERTIFICATION_NAME&name=${encodeURIComponent(
+                      `Judgemynt AI Judgment Credential: ${cfg?.title || 'Assessment'}`
+                    )}&organizationName=Judgemynt&issueYear=${new Date().getFullYear()}&issueMonth=${new Date().getMonth() + 1}&certUrl=${encodeURIComponent(
+                      grade.credential.url
+                    )}&certId=${grade.credential.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 rounded-full px-5 py-2.5 font-bold text-[#04121a] hover:brightness-110 transition"
+                    style={{ background: TEAL }}
+                  >
+                    <ExternalLink className="w-4 h-4" /> Add to LinkedIn
+                  </a>
+                  <a
+                    href={grade.credential.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded-full px-5 py-2.5 font-semibold border border-white/15 hover:bg-white/5 transition"
+                  >
+                    View credential
+                  </a>
+                </div>
               </div>
             )}
 
