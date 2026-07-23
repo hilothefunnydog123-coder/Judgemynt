@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase, SUPABASE_ENABLED } from '@/lib/supabase'
 import type { User } from '@supabase/supabase-js'
 
@@ -23,25 +23,29 @@ export function useAuth() {
     return () => subscription.unsubscribe()
   }, [])
 
-  const signIn = async (email: string, password: string) => {
+  /* Every function this hook returns is wrapped in useCallback so its identity
+     is stable across renders. Callers memoize on these (the employer console
+     builds its fetch helper from getToken); unstable identities put that page
+     in an infinite refresh loop. */
+  const signIn = useCallback(async (email: string, password: string) => {
     if (!supabase) return { error: 'Supabase not configured' }
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     return { error: error?.message }
-  }
+  }, [])
 
-  const signUp = async (email: string, password: string) => {
+  const signUp = useCallback(async (email: string, password: string) => {
     if (!supabase) return { error: 'Supabase not configured' }
     const { error } = await supabase.auth.signUp({ email, password })
     return { error: error?.message }
-  }
+  }, [])
 
-  const signOut = async () => {
+  const signOut = useCallback(async () => {
     if (!supabase) return
     await supabase.auth.signOut()
     setUser(null)
-  }
+  }, [])
 
-  const signInWithGoogle = async () => {
+  const signInWithGoogle = useCallback(async () => {
     if (!supabase) {
       return { error: 'Sign-in is not configured on this deployment. Set the Supabase keys and enable the Google provider.' }
     }
@@ -58,20 +62,20 @@ export function useAuth() {
       },
     })
     return { error: error?.message }
-  }
+  }, [])
 
-  const updateName = async (firstName: string, lastName: string) => {
+  const updateName = useCallback(async (firstName: string, lastName: string) => {
     if (!supabase) return { error: 'Supabase not configured' }
     const { data, error } = await supabase.auth.updateUser({ data: { first_name: firstName, last_name: lastName } })
     if (data?.user) setUser(data.user)
     return { error: error?.message }
-  }
+  }, [])
 
-  const getToken = async () => {
+  const getToken = useCallback(async () => {
     if (!supabase) return null
     const { data } = await supabase.auth.getSession()
     return data.session?.access_token || null
-  }
+  }, [])
 
   return { user, loading, signIn, signUp, signOut, signInWithGoogle, updateName, getToken, isLoggedIn: !!user }
 }

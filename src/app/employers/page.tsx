@@ -556,6 +556,11 @@ export default function Employers() {
           <button onClick={() => setEditing(null)} className="rounded-full px-6 py-3 border border-white/15 hover:bg-white/5 transition">
             Cancel
           </button>
+          {!editing.name.trim() && (
+            <span className="self-center text-[13.5px] font-semibold text-white">
+              Name the role at the top to enable Save.
+            </span>
+          )}
         </div>
       </Shell>
     )
