@@ -230,3 +230,48 @@ alter table judgemynt_credentials
 
 create index if not exists idx_jm_credentials_task
   on judgemynt_credentials (task_id, created_at desc);
+
+-- One credential per person per task: the mint looks up (user_id, task_id) and
+-- returns the credential they already hold instead of issuing a second. A plain
+-- index (not unique) so re-running this file never fails on rows that predate
+-- the rule; the application enforces the single-credential invariant.
+create index if not exists idx_jm_credentials_user_task
+  on judgemynt_credentials (user_id, task_id);
+
+-- ── Grading integrity: server-owned sessions ──────────────────────────────
+-- The score cannot be graded from a transcript the browser sends, or a
+-- candidate could POST a fabricated perfect session. The AI `respond` calls
+-- already run on the server, so the real turns are accumulated HERE, keyed by
+-- an unguessable session id, and the examiner grades only this row. tokens_used
+-- and started_at are server-authoritative too, so Efficiency and the clock
+-- cannot be faked. The graded result is cached on the row so a network retry
+-- returns the same score instead of paying for a second examiner call.
+create table if not exists judgemynt_sessions (
+  id uuid primary key default gen_random_uuid(),
+  candidate_id text,                      -- auth user id, bound on first authed call
+  token text,                             -- invite token, for role + budget resolution
+  task_id text,
+  model text,
+  turns jsonb not null default '[]'::jsonb,   -- [{ role, content, cost }], server truth
+  tokens_used int not null default 0,     -- server-tracked spend, the real budget meter
+  started_at timestamptz default now(),
+  graded boolean not null default false,  -- one grade per session
+  result jsonb,                           -- the cached graded result, for idempotent retries
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+alter table judgemynt_sessions enable row level security;
+
+-- Retake lock for invited role assessments (no marketplace application): the
+-- evaluate path checks for an existing graded result by this candidate on this
+-- role before grading again. Needs the candidate on the row and an index to
+-- find it. Practice runs also carry the candidate so a person is pooled and
+-- credentialed on their FIRST attempt at a task only.
+alter table judgemynt_results
+  add column if not exists candidate_id text;
+
+create index if not exists idx_jm_results_role_candidate
+  on judgemynt_results (role_id, candidate_id);
+create index if not exists idx_jm_results_task_candidate
+  on judgemynt_results (task_id, candidate_id);

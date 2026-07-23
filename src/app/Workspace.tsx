@@ -152,6 +152,9 @@ export default function Workspace({
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const endedRef = useRef(false)
+  // The server-owned session id. The server accumulates the real transcript
+  // under this id and grades only that, so the score cannot be forged.
+  const sessionId = useRef<string>('')
   const t0 = useRef<number>(0)
   const tel = useRef<{ events: TelemetryEvent[]; typed: number; pasted: number }>({
     events: [], typed: 0, pasted: 0,
@@ -254,6 +257,7 @@ export default function Workspace({
           token: inviteToken,
           taskId: cfg?.taskId,
           model,
+          sessionId: sessionId.current,
           history: messages,
           tokensUsed: used,
           tokensBudget: budget,
@@ -294,14 +298,17 @@ export default function Workspace({
       const res = await fetch('/api/assess', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'respond', token: inviteToken, taskId: cfg?.taskId, model, history, message: text }),
+        body: JSON.stringify({ action: 'respond', token: inviteToken, taskId: cfg?.taskId, model, history, message: text, sessionId: sessionId.current }),
       })
       const d = await res.json()
       if (!res.ok) {
+        // The server enforces the token budget too; honor a hard lock.
+        if (d.locked) { end('tokens'); return }
         sys(d.error || 'AI error. Try again.')
         setBusy(false)
         return
       }
+      if (d.sessionId) sessionId.current = d.sessionId
       const cost = Number(d.tokensUsed) || 0
       const next = used + cost
       setUsed(next)

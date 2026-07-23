@@ -42,6 +42,26 @@ interface Msg {
   content: string
 }
 
+/** The server-owned session that makes a graded score trustworthy. */
+const SESSIONS = 'judgemynt_sessions'
+interface SessionTurn {
+  role: 'user' | 'assistant'
+  content: string
+  cost?: number
+}
+interface SessionRow {
+  id: string
+  candidate_id: string | null
+  token: string | null
+  task_id: string | null
+  model: string | null
+  turns: SessionTurn[]
+  tokens_used: number
+  started_at: string
+  graded: boolean
+  result: Record<string, unknown> | null
+}
+
 const estTokens = (s: string): number => Math.ceil((s || '').length / 4)
 const clamp = (v: unknown): number => Math.max(0, Math.min(100, Math.round(Number(v) || 0)))
 
@@ -270,9 +290,59 @@ export async function POST(req: NextRequest) {
   /* ── the AI under the candidate's direction ─────────────────────────── */
   if (action === 'respond') {
     const message = String(body.message || '')
-    const history = (body.history as Msg[]) || []
+    const clientHistory = (body.history as Msg[]) || []
     const m = MODEL_BY_ID[String(body.model)] || MODEL_BY_ID.gpt
     if (!message.trim()) return NextResponse.json({ error: 'Empty message.' }, { status: 400 })
+
+    const db = admin()
+    const user = await userFromAuth(req)
+
+    /* Server-owned session. The transcript the examiner grades is built HERE,
+       from real turns, so a fabricated one sent at grading time is ignored.
+       When there is no database (a bare self-host), we fall back to the
+       client history: integrity only matters where results are stored. */
+    let sessionId = String(body.sessionId || '')
+    let session: SessionRow | null = null
+    if (db) {
+      if (sessionId) {
+        const { data } = await db.from(SESSIONS).select('*').eq('id', sessionId).maybeSingle()
+        session = (data as SessionRow) || null
+        // A session bound to another account is not yours to extend.
+        if (session?.candidate_id && user && session.candidate_id !== user.id) {
+          return NextResponse.json({ error: 'Session mismatch.' }, { status: 403 })
+        }
+        if (session?.graded) {
+          return NextResponse.json({ error: 'This session is already graded.' }, { status: 409 })
+        }
+      }
+      if (!session) {
+        const { data } = await db
+          .from(SESSIONS)
+          .insert({
+            candidate_id: user?.id || null,
+            token: (body.token as string) || null,
+            task_id: (body.taskId as string) || null,
+            model: m.id,
+          })
+          .select('*')
+          .maybeSingle()
+        session = (data as SessionRow) || null
+        sessionId = session?.id || ''
+      }
+    }
+
+    const priorTurns: ChatTurn[] = session
+      ? (Array.isArray(session.turns) ? session.turns : []).map((t) => ({ role: t.role, content: t.content }))
+      : chatTurns(clientHistory, message).slice(0, -1)
+
+    // Server-side budget backstop: the client stops itself first, but a scripted
+    // client cannot spend past the budget the role actually sets.
+    if (session) {
+      const resolved = await roleFor(body.token as string, body.taskId as string)
+      if ((Number(session.tokens_used) || 0) >= resolved.budget.tokens) {
+        return NextResponse.json({ error: 'Token budget spent.', locked: true }, { status: 402 })
+      }
+    }
 
     // The assistant is a BLANK, full-capability chatbot. It is not told the
     // task, the deliverable, or that an assessment exists; it knows only what
@@ -283,12 +353,28 @@ export async function POST(req: NextRequest) {
 
 One formatting note: never use em dashes; use commas, colons, or separate sentences instead.`
 
+    const turnsForAI: ChatTurn[] = [...priorTurns, { role: 'user', content: message.slice(0, 6000) }]
+
     // 2048 output tokens: quality needs headroom, and length already prices
     // itself in, since a longer reply costs the candidate more budget.
-    const r = await callAI(system, chatTurns(history, message), 2048, 0.55)
+    const r = await callAI(system, turnsForAI, 2048, 0.55)
     if (!r.ok) return NextResponse.json({ error: r.why }, { status: 502 })
     const cost = Math.ceil((estTokens(message) + estTokens(r.text)) * m.mult) + 40
-    return NextResponse.json({ reply: r.text, tokensUsed: cost, model: m.tag })
+
+    if (db && session) {
+      const nextTurns = [
+        ...(Array.isArray(session.turns) ? session.turns : []),
+        { role: 'user', content: message.slice(0, 6000) },
+        { role: 'assistant', content: r.text, cost },
+      ]
+      await db
+        .from(SESSIONS)
+        .update({ turns: nextTurns, tokens_used: (Number(session.tokens_used) || 0) + cost, model: m.id, updated_at: new Date().toISOString() })
+        .eq('id', sessionId)
+        .eq('graded', false)
+    }
+
+    return NextResponse.json({ reply: r.text, tokensUsed: cost, sessionId, model: m.tag })
   }
 
   /* ── grade the session ──────────────────────────────────────────────── */
@@ -302,16 +388,66 @@ One formatting note: never use em dashes; use commas, colons, or separate senten
     const profile = await profileFor(user.id)
     const legalName = profile ? [profile.first_name, profile.last_name].filter(Boolean).join(' ') : ''
 
-    const history = (body.history as Msg[]) || []
     const m = MODEL_BY_ID[String(body.model)] || MODEL_BY_ID.gpt
     const resolved = await roleFor(body.token as string, body.taskId as string)
     const rubric = resolved.rubric
     const key = resolved.custom ? undefined : keyFor(resolved.taskId)
+    const db = admin()
+    const invite = body.token ? decodeInvite(String(body.token)) : null
 
-    const tokensUsed = Number(body.tokensUsed) || 0
+    /* ── Load the server-owned session: the real transcript, the real spend,
+       the real clock. The examiner grades THIS, never what the client sends,
+       so a fabricated transcript cannot buy a score. */
+    let session: SessionRow | null = null
+    if (db && body.sessionId) {
+      const { data } = await db.from(SESSIONS).select('*').eq('id', String(body.sessionId)).maybeSingle()
+      session = (data as SessionRow) || null
+      if (session?.candidate_id && session.candidate_id !== user.id) {
+        return NextResponse.json({ error: 'Session mismatch.' }, { status: 403 })
+      }
+      // Idempotent: a retry after a graded session returns the same result, no
+      // second examiner call, no double write.
+      if (session?.graded && session.result) return NextResponse.json(session.result)
+    }
+
+    /* ── Retake locks, checked BEFORE the expensive examiner call. */
+    if (invite?.applicationId && db) {
+      const { data: app } = await db
+        .from('judgemynt_applications')
+        .select('status, candidate_id')
+        .eq('id', invite.applicationId)
+        .maybeSingle()
+      if (app && app.candidate_id && app.candidate_id !== user.id) {
+        return NextResponse.json({ error: 'This application is not yours.' }, { status: 403 })
+      }
+      if (app && app.status !== 'applied') {
+        return NextResponse.json({ error: 'You have already been assessed for this job. An application is one attempt.' }, { status: 409 })
+      }
+    } else if (invite?.roleId && db) {
+      // An invited role assessment with no application: one graded attempt per
+      // candidate per role, so nobody retakes after the traps are revealed.
+      const { count } = await db
+        .from('judgemynt_results')
+        .select('id', { count: 'exact', head: true })
+        .eq('role_id', invite.roleId)
+        .eq('candidate_id', user.id)
+      if ((count || 0) > 0) {
+        return NextResponse.json({ error: 'You have already been assessed for this role.' }, { status: 409 })
+      }
+    }
+
+    // Server-authoritative transcript, tokens, and time when a session exists;
+    // the client-sent values are a fallback for a no-database self-host only.
+    const history: Msg[] = session
+      ? (Array.isArray(session.turns) ? session.turns : []).map((t) => ({ role: t.role, content: t.content }))
+      : (body.history as Msg[]) || []
+
+    const tokensUsed = session ? Number(session.tokens_used) || 0 : Number(body.tokensUsed) || 0
     const tokensBudget = Number(body.tokensBudget) || resolved.budget.tokens
-    const secondsUsed = Number(body.secondsUsed) || 0
     const timeLimit = Number(body.timeLimit) || resolved.budget.seconds
+    const secondsUsed = session?.started_at
+      ? Math.min(timeLimit, Math.max(0, Math.round((Date.now() - new Date(session.started_at).getTime()) / 1000)))
+      : Number(body.secondsUsed) || 0
     const reason = String(body.reason || 'submit')
     const tel = sanitizeTelemetry(body.telemetry)
     const signals = deriveSignals(tel, resolved.docs.length)
@@ -443,9 +579,8 @@ Return ONLY raw JSON, no markdown:
     }
 
     /* Store it if this was an invited assessment. Never block the candidate's
-       result on a database that might not be configured. */
-    const invite = body.token ? decodeInvite(String(body.token)) : null
-    const db = admin()
+       result on a database that might not be configured. (`invite` and `db`
+       are resolved at the top of this handler for the retake-lock checks.) */
 
     /* ── The percentile benchmark ─────────────────────────────────────────
        Every finished session, invited or practice, pass or fail, is ranked
@@ -483,6 +618,7 @@ Return ONLY raw JSON, no markdown:
           .insert({
             company_id: invite.companyId,
             company_name: (body.company_name as string) || null,
+            candidate_id: user.id,
             candidate_name: legalName || (body.candidate_name as string) || null,
             candidate_email: user.email || (body.candidate_email as string) || null,
             score: overall,
@@ -544,11 +680,24 @@ Return ONLY raw JSON, no markdown:
          sentinel company id so the task-scope benchmark reflects everyone who
          has taken this catalog task, while staying invisible to every real
          employer console, all of which filter judgemynt_results by their own
-         company_id. No transcript or contact details are kept for practice. */
+         company_id. No transcript or contact details are kept for practice.
+
+         ONLY the first attempt at a task is pooled: otherwise one person could
+         retake until they land a high score and skew the benchmark they are
+         then ranked against. Retakes are still graded and shown, they just do
+         not vote. */
       try {
-        await db.from('judgemynt_results').insert({
-          company_id: PRACTICE_COMPANY_ID,
-          score: overall,
+        const { count: priorPractice } = await db
+          .from('judgemynt_results')
+          .select('id', { count: 'exact', head: true })
+          .eq('company_id', PRACTICE_COMPANY_ID)
+          .eq('task_id', resolved.taskId)
+          .eq('candidate_id', user.id)
+        if ((priorPractice || 0) === 0)
+          await db.from('judgemynt_results').insert({
+            company_id: PRACTICE_COMPANY_ID,
+            candidate_id: user.id,
+            score: overall,
           creativity: dimensions.direction ?? dimensions.judgment ?? null,
           efficiency: dimensions.efficiency ?? null,
           quality: dimensions.quality ?? null,
@@ -583,6 +732,24 @@ Return ONLY raw JSON, no markdown:
        tamper-evident view: the number the holder shares can never drift. */
     let credential: { id: string; url: string } | null = null
     if (!invite && db && result.passed) {
+      try {
+        const origin = new URL(req.url).origin
+        // One credential per person per task. A retake that passes again returns
+        // the credential they already hold rather than minting a second.
+        const { data: existing } = await db
+          .from('judgemynt_credentials')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('task_id', resolved.taskId)
+          .maybeSingle()
+        if (existing?.id) {
+          credential = { id: existing.id, url: `${origin}/credential/${existing.id}` }
+        }
+      } catch {
+        /* fall through to minting */
+      }
+    }
+    if (!invite && db && result.passed && !credential) {
       try {
         const category = resolved.role
         // The pooled task-scope benchmark for this session. roleId is null on a
@@ -649,7 +816,24 @@ Return ONLY raw JSON, no markdown:
       }
     }
 
-    return NextResponse.json({ ...result, benchmark: benchmarkResult, credential })
+    const payload = { ...result, benchmark: benchmarkResult, credential }
+
+    /* Seal the session: one grade, and a cached result so a retry (a lost
+       response, a double click) returns the same score for free instead of
+       paying for a second examiner call or writing a duplicate row. */
+    if (db && session && !session.graded) {
+      try {
+        await db
+          .from(SESSIONS)
+          .update({ graded: true, result: payload, candidate_id: session.candidate_id || user.id })
+          .eq('id', session.id)
+          .eq('graded', false)
+      } catch {
+        /* the candidate still gets their score */
+      }
+    }
+
+    return NextResponse.json(payload)
   }
 
   return NextResponse.json({ error: 'Unknown action.' }, { status: 400 })
