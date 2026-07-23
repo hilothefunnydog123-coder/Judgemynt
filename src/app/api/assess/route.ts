@@ -56,22 +56,45 @@ function transcript(history: Msg[], cap: number): string {
   return out.length > cap ? '…\n' + out.slice(out.length - cap) : out
 }
 
-async function callGemini(prompt: string, tokens: number, temperature: number): Promise<string> {
+type GeminiResult = { ok: true; text: string } | { ok: false; why: string }
+
+/** Returns the reply text, or a human-readable reason it could not.
+ *  The reason reaches the UI: a misconfigured deployment should say exactly
+ *  what is wrong instead of a generic "AI unavailable". */
+async function callGemini(prompt: string, tokens: number, temperature: number): Promise<GeminiResult> {
   const key = process.env.GEMINI_API_KEY
-  if (!key) return ''
-  const res = await gfetch(`${GEMINI_URL}?key=${key}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      // gemini-2.5-flash is a thinking model; thinking off so output tokens
-      // go to the JSON we asked for rather than to internal reasoning.
-      generationConfig: { maxOutputTokens: tokens, temperature, thinkingConfig: { thinkingBudget: 0 } },
-    }),
-  })
-  if (!res.ok) return ''
-  const json = await res.json()
-  return json.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? ''
+  if (!key) {
+    return { ok: false, why: 'This deployment has no GEMINI_API_KEY set. Add it to the environment variables and redeploy.' }
+  }
+  try {
+    const res = await gfetch(`${GEMINI_URL}?key=${key}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        // gemini-2.5-flash is a thinking model; thinking off so output tokens
+        // go to the JSON we asked for rather than to internal reasoning.
+        generationConfig: { maxOutputTokens: tokens, temperature, thinkingConfig: { thinkingBudget: 0 } },
+      }),
+    })
+    if (!res.ok) {
+      let detail = ''
+      try {
+        const j = await res.json()
+        detail = String(j?.error?.message || '').slice(0, 200)
+      } catch {}
+      return { ok: false, why: `The AI provider returned ${res.status}${detail ? `: ${detail}` : '.'}` }
+    }
+    const json = await res.json()
+    const text = json.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? ''
+    if (!text) {
+      const reason = String(json.candidates?.[0]?.finishReason || json.promptFeedback?.blockReason || 'empty reply')
+      return { ok: false, why: `The AI returned no text (${reason}). Try again.` }
+    }
+    return { ok: true, text }
+  } catch {
+    return { ok: false, why: 'Could not reach the AI provider. Check the network and try again.' }
+  }
 }
 
 /** Load the role behind an invite token, falling back to the catalog default. */
@@ -178,10 +201,10 @@ Rules for you:
 
 Reply as the assistant now.`
 
-    const reply = await callGemini(prompt, 1024, 0.55)
-    if (!reply) return NextResponse.json({ error: 'AI unavailable, try again.' }, { status: 502 })
-    const cost = Math.ceil((estTokens(message) + estTokens(reply)) * m.mult) + 40
-    return NextResponse.json({ reply, tokensUsed: cost, model: m.tag })
+    const r = await callGemini(prompt, 1024, 0.55)
+    if (!r.ok) return NextResponse.json({ error: r.why }, { status: 502 })
+    const cost = Math.ceil((estTokens(message) + estTokens(r.text)) * m.mult) + 40
+    return NextResponse.json({ reply: r.text, tokensUsed: cost, model: m.tag })
   }
 
   /* ── grade the session ──────────────────────────────────────────────── */
@@ -289,8 +312,9 @@ Return ONLY raw JSON, no markdown:
 }${traps.length ? `\nThe "traps" array must contain exactly ${traps.length} objects, one per trap, using the exact ids given above.` : ''}`
 
     const raw = await callGemini(prompt, 1800, 0.25)
-    const p = extractJson(raw)
-    if (!p) return NextResponse.json({ error: 'Examiner hiccup. Submit again.' }, { status: 502 })
+    if (!raw.ok) return NextResponse.json({ error: raw.why }, { status: 502 })
+    const p = extractJson(raw.text)
+    if (!p) return NextResponse.json({ error: 'The examiner returned malformed output. Submit again.' }, { status: 502 })
 
     const rawDims = (p.dimensions as Record<string, unknown>) || {}
     const dimensions: Record<string, number> = {}
