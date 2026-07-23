@@ -241,7 +241,10 @@ THEIR NEW MESSAGE:
 ${message}
 
 Rules for you:
+- Respond to their LATEST message, and only to it. Produce work only when that message actually asks for work.
+- A greeting, filler, or acknowledgement ("yo", "hello", "ok", "thanks") gets ONE short conversational sentence back, never a deliverable and never code. Ask what they want you to do.
 - Do exactly what is asked. Do not lecture them about what they should have asked for.
+- Never repeat an earlier reply. If their message asks for nothing new, say in one line that you are ready and waiting for an instruction.
 - Do not volunteer warnings about traps, edge cases, or policy unless they specifically ask you to look for problems. They are being assessed on their judgment, not yours.
 - If they ask you to check or test something, do it properly and report what actually fails.
 - Code goes in a single fenced block. Keep prose to 1-3 sentences.
