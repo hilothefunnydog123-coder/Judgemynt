@@ -16,6 +16,7 @@ import Link from 'next/link'
 import { ArrowUpRight, Check, X, Clock, Zap, FileText, Loader2, Lock } from 'lucide-react'
 import Workspace from './Workspace'
 import Onboarding from '@/components/Onboarding'
+import Demo from '@/components/Demo'
 import { useProfile } from '@/hooks/useProfile'
 
 const TEAL = '#00d4aa'
@@ -225,6 +226,7 @@ export default function Home() {
       <nav className="relative z-20 flex items-center gap-4 px-5 sm:px-8 py-5">
         <span className="font-podium text-xl sm:text-2xl uppercase tracking-wider">Judgemynt</span>
         <div className="ml-auto flex items-center gap-3 sm:gap-5 text-[13.5px]">
+          <a href="#demo" className="text-white font-semibold hover:text-[#00d4aa] transition hidden sm:block">Demo</a>
           <a href="#tasks" className="text-white font-semibold hover:text-[#00d4aa] transition hidden sm:block">Tasks</a>
           <Link href="/marketplace" className="text-white font-semibold hover:text-[#00d4aa] transition">Marketplace</Link>
           <Link href="/employers" className="text-white font-semibold hover:text-[#00d4aa] transition">For employers</Link>
@@ -277,14 +279,23 @@ export default function Home() {
           >
             Take one now, free
           </button>
-          <Link
-            href="/employers"
+          <a
+            href="#demo"
             className="rounded-full px-7 py-3.5 font-semibold border border-white/15 hover:bg-white/5 transition flex items-center gap-1.5"
           >
-            Assess candidates <ArrowUpRight className="w-4 h-4" />
-          </Link>
+            Try the 90-second demo <ArrowUpRight className="w-4 h-4" />
+          </a>
         </div>
       </header>
+
+      {/* ── interactive demo: feel the product before signing up ──────── */}
+      <section id="demo" className="relative z-10 px-5 sm:px-8 max-w-4xl mx-auto mt-10 sm:mt-16 scroll-mt-20">
+        <div className="flex items-baseline gap-3 flex-wrap mb-4">
+          <h2 className="font-podium text-[clamp(1.6rem,5vw,2.8rem)] uppercase leading-[0.95]">See it in 90 seconds</h2>
+          <span className="text-white font-semibold text-[14px]">No signup. You play the agent.</span>
+        </div>
+        <Demo onStart={() => start()} />
+      </section>
 
       {/* ── the proof: same task, two answers ────────────────────────── */}
       <section className="relative z-10 px-5 sm:px-8 max-w-6xl mx-auto mt-8 sm:mt-14">
