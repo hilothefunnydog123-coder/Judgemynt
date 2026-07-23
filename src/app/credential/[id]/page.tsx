@@ -122,15 +122,9 @@ export default async function CredentialPage({ params }: { params: Promise<{ id:
   const c = await load(id)
   const origin = await siteOrigin()
 
-  const fontLink = (
-    <>
-      <link
-        rel="stylesheet"
-        href="https://db.onlinewebfonts.com/c/8b75d9dcff6a48c35a46656192adf019?family=FSP+DEMO+-+PODIUM+Sharp+4.11"
-      />
-      <style>{`.font-podium{font-family:"FSP DEMO - PODIUM Sharp 4.11", var(--font-sans), system-ui, sans-serif;}`}</style>
-    </>
-  )
+  // The display face is now global (see globals.css / layout), self-hosted by
+  // next/font. Nothing to inject per-page.
+  const fontLink = null
 
   if (!c) {
     return (

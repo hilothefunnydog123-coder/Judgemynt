@@ -1,8 +1,13 @@
 import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
+import { Inter, Archivo_Black } from 'next/font/google'
 import './globals.css'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-sans' })
+
+// The display face for the wordmark and every uppercase headline. Loaded via
+// next/font, so Next self-hosts the files at build time: no external request,
+// no rip-site demo font, and it renders instantly instead of flashing.
+const display = Archivo_Black({ subsets: ['latin'], weight: '400', variable: '--font-display', display: 'swap' })
 
 const BASE_URL = 'https://judgemynt.com'
 
@@ -38,7 +43,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${inter.variable} h-full`}>
+    <html lang="en" className={`${inter.variable} ${display.variable} h-full`}>
       <head>
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
       </head>

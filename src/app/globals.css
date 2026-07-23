@@ -37,3 +37,10 @@ textarea {
 ::selection {
   background: #00d4aa33;
 }
+
+/* The wordmark and headline face. Defined once, globally, so it renders the
+   same on every surface without each page reloading a font. */
+.font-podium {
+  font-family: var(--font-display), var(--font-sans), system-ui, sans-serif;
+  letter-spacing: -0.01em;
+}

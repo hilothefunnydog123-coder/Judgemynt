@@ -174,7 +174,6 @@ export default function Home() {
     if (!isLoggedIn) {
       return (
         <div className="min-h-screen flex items-center justify-center px-5">
-          <FontLink />
           <div className="max-w-md text-center">
             <div className="font-podium text-3xl uppercase">Sign in to take your assessment</div>
             <p className="text-white font-medium mt-3 leading-relaxed">
@@ -200,7 +199,6 @@ export default function Home() {
     if (!profile) {
       return (
         <div className="min-h-screen">
-          <FontLink />
           <Onboarding onSave={saveProfile} onDone={() => {}} />
         </div>
       )
@@ -220,8 +218,6 @@ export default function Home() {
 
   return (
     <div className="min-h-screen text-[#eaf4fa] overflow-x-hidden">
-      <FontLink />
-
       {/* ── nav ───────────────────────────────────────────────────────── */}
       <nav className="relative z-20 flex items-center gap-4 px-5 sm:px-8 py-5">
         <span className="font-podium text-xl sm:text-2xl uppercase tracking-wider">Judgemynt</span>
@@ -448,17 +444,6 @@ export default function Home() {
         <Link href="/employers" className="ml-auto text-white font-semibold hover:text-[#00d4aa] text-[13.5px] transition">For employers</Link>
       </footer>
     </div>
-  )
-}
-
-/* The display face is loaded per-page rather than in the layout so the exam
-   surface renders immediately without waiting on a third-party stylesheet. */
-function FontLink() {
-  return (
-    <>
-      <link rel="stylesheet" href="https://db.onlinewebfonts.com/c/8b75d9dcff6a48c35a46656192adf019?family=FSP+DEMO+-+PODIUM+Sharp+4.11" />
-      <style>{`.font-podium{font-family:"FSP DEMO - PODIUM Sharp 4.11", var(--font-sans), system-ui, sans-serif;}`}</style>
-    </>
   )
 }
 

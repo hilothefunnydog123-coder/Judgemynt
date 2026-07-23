@@ -742,8 +742,6 @@ export default function Employers() {
 function Shell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen text-[#eaf4fa]">
-      <link rel="stylesheet" href="https://db.onlinewebfonts.com/c/8b75d9dcff6a48c35a46656192adf019?family=FSP+DEMO+-+PODIUM+Sharp+4.11" />
-      <style>{`.font-podium{font-family:"FSP DEMO - PODIUM Sharp 4.11", var(--font-sans), system-ui, sans-serif;}`}</style>
       <nav className="flex items-center gap-4 px-5 sm:px-8 py-5 max-w-5xl mx-auto">
         <Link href="/" className="font-podium text-xl uppercase tracking-wider">
           Judgemynt
