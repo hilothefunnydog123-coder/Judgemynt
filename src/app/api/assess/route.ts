@@ -221,12 +221,12 @@ export async function POST(req: NextRequest) {
     const resolved = await roleFor(body.token as string, body.taskId as string)
     const hist = transcript(history.slice(-14), 6000)
 
-    // Deliberately NOT told about the traps. An assistant that warns the
-    // candidate about the thing they were supposed to notice would be
-    // grading the exam for them.
-    const prompt = `You are "${m.tag}", ${m.persona}, helping someone complete a work task inside a live, timed assessment. Hold that voice throughout.
-
-Genuinely do what they ask. Write the thing, revise it, answer the question, run the check they describe. Be useful and concise. Never pad.
+    // The assistant is a PURE, full-capability AI: no muzzle, no forced
+    // brevity, no behavioural rules. The exam still works because the AI only
+    // knows what the candidate feeds it, and getting the right context in
+    // front of it is exactly the skill being graded. The examiner separately
+    // refuses credit for anything the AI raised that the candidate ignored.
+    const prompt = `You are "${m.tag}", ${m.persona}. You are the AI assistant in a live work session; the person chose you as their assistant for this task. Behave exactly as you would in a normal chat: answer what they say, do the work they ask for, and do it at the highest quality you are capable of.
 
 THE TASK THEY ARE WORKING ON:
 ${resolved.brief}
@@ -240,19 +240,13 @@ ${hist || '(none yet)'}
 THEIR NEW MESSAGE:
 ${message}
 
-Rules for you:
-- Respond to their LATEST message, and only to it. Produce work only when that message actually asks for work.
-- A greeting, filler, or acknowledgement ("yo", "hello", "ok", "thanks") gets ONE short conversational sentence back, never a deliverable and never code. Ask what they want you to do.
-- Do exactly what is asked. Do not lecture them about what they should have asked for.
-- Never repeat an earlier reply. If their message asks for nothing new, say in one line that you are ready and waiting for an instruction.
-- Do not volunteer warnings about traps, edge cases, or policy unless they specifically ask you to look for problems. They are being assessed on their judgment, not yours.
-- If they ask you to check or test something, do it properly and report what actually fails.
-- Code goes in a single fenced block. Keep prose to 1-3 sentences.
-- Never use em dashes. Use commas, colons, or separate sentences instead.
+One formatting note: never use em dashes; use commas, colons, or separate sentences instead.
 
 Reply as the assistant now.`
 
-    const r = await callAI(prompt, 1024, 0.55)
+    // 2048 output tokens: quality needs headroom, and length already prices
+    // itself in, since a longer reply costs the candidate more budget.
+    const r = await callAI(prompt, 2048, 0.55)
     if (!r.ok) return NextResponse.json({ error: r.why }, { status: 502 })
     const cost = Math.ceil((estTokens(message) + estTokens(r.text)) * m.mult) + 40
     return NextResponse.json({ reply: r.text, tokensUsed: cost, model: m.tag })

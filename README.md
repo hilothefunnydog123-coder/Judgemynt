@@ -16,7 +16,7 @@ So the traps moved. They no longer live in the prose — they live in the **cont
 - Five bugs, one sprint. The loudest is a $14k account. The quiet one is $310k, three days from an SLA breach that voids the renewal.
 - Churn for the board deck. Annual plans stay `status = 'active'` for months after the customer quits, so the comfortable number is wrong.
 
-An outside chatbot without those documents cannot help. With them, it's still a judgment call rather than a lookup. And the AI *inside* the workspace is deliberately instructed not to volunteer warnings — ask it to write the refund denial and it will write you a good one.
+An outside chatbot without those documents cannot help. With them, it's still a judgment call rather than a lookup. The AI *inside* the workspace is a pure, unrestricted assistant: it only knows what the candidate feeds it, and feeding it the right context is exactly the skill being graded. The examiner separately refuses credit for anything the AI raised that the candidate ignored.
 
 ## What a session looks like
 
