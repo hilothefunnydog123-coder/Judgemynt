@@ -190,7 +190,7 @@ export default function Workspace({
       { role: 'system', content: `TASK: ${cfg?.title}\n\n${cfg?.brief}\n\nDELIVER: ${cfg?.deliverable}` },
       {
         role: 'assistant',
-        content: `I'm ${modelInfo?.tag || 'your assistant'}. Tell me what to build and I'll do it. Type /help for commands.`,
+        content: `I'm ${modelInfo?.tag || 'your assistant'}. I know nothing about your task until you tell me. Type /help for commands.`,
       },
     ])
   }
@@ -321,7 +321,7 @@ export default function Workspace({
         } else sys(`Usage: /model ${models.map((m) => m.id).join(' | ')}`)
         break
       case 'check':
-        ask('Check the current answer against every requirement in the task, one by one. For anything that fails, show me the exact input or case that breaks it. Do not fix it yet.')
+        ask('Check the current answer against every requirement I have given you in this conversation, one by one. For anything that fails, show me the exact input or case that breaks it. Do not fix it yet.')
         break
       case 'reset':
         setMessages((m) => [
@@ -406,7 +406,8 @@ export default function Workspace({
                     ))}
                   </div>
                   <p className="text-white font-semibold text-[14px] mt-3 leading-relaxed">
-                    You are allowed to use the AI for everything. These documents are the part it does not have.
+                    You are allowed to use the AI for everything. It starts completely blank: it does not know
+                    the task, the deliverable, or these documents until you tell it.
                   </p>
                 </div>
               )}

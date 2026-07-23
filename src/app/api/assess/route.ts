@@ -266,24 +266,12 @@ export async function POST(req: NextRequest) {
     const m = MODEL_BY_ID[String(body.model)] || MODEL_BY_ID.gpt
     if (!message.trim()) return NextResponse.json({ error: 'Empty message.' }, { status: 400 })
 
-    const resolved = await roleFor(body.token as string, body.taskId as string)
-
-    // The assistant is a PURE, full-capability AI: no muzzle, no forced
-    // brevity, no behavioural rules. The exam still works because the AI only
-    // knows what the candidate feeds it, and getting the right context in
-    // front of it is exactly the skill being graded. The examiner separately
-    // refuses credit for anything the AI raised that the candidate ignored.
-    // The conversation goes over as real role-separated chat turns, so the
-    // model responds to "yo" like a chat and to instructions like work.
-    const system = `You are "${m.tag}", ${m.persona}. You are the AI assistant in a live work session; the person you are talking to chose you as their assistant while they work on the task below. Behave exactly as you would in any normal chat, at the highest quality you are capable of.
-
-Background on what they are working on, for context when they ask for help:
-
-THE TASK:
-${resolved.brief}
-
-WHAT THEY MUST DELIVER:
-${resolved.deliverable}
+    // The assistant is a BLANK, full-capability chatbot. It is not told the
+    // task, the deliverable, or that an assessment exists; it knows only what
+    // the candidate types at it, exactly like opening a fresh chat with any
+    // AI. Briefing it well IS the skill being measured, and the examiner,
+    // who does know everything, grades what the candidate did with it.
+    const system = `You are "${m.tag}", ${m.persona}. Respond exactly as you would in any normal chat, at the highest quality you are capable of.
 
 One formatting note: never use em dashes; use commas, colons, or separate sentences instead.`
 
